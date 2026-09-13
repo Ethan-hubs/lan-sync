@@ -1908,11 +1908,11 @@ BEP 会话（含 folder ID、文件名、块哈希）运行在设备间 TLS 之�
 </blockquote>
 <ol>
 <li>同网段两台设备：新增/修改/删除/重命名 4 类操作，<strong>记录各自的 P50/P95 实测值</strong>（E5），并按下表判定（<strong>局域网同步期间"经 Relay 的文件负载公网流量 = 0"</strong>——注意不是"ECS 总公网流量 = 0"：客户端仍会向 <code>stdiscosrv</code> 宣布/查询地址，这部分 discovery 元数据流量不计入本条）（<strong>v0.8 给出阈值，否则本条没有判定力</strong>）：
-   | 实测 P95（新增/修改） | 判定 |
-   |---|---|
-   | <strong>≤ 3s</strong> | ✅ 达标 |
-   | <strong>3–10s</strong> | ⚠️ 可接受，但须在报告里写明原因（如 <code>fsWatcherDelayS</code> 默认 10s）与是否调优 |
-   | <strong>&gt; 10s</strong> | ❌ 不达标，必须给出缓解措施（调小 <code>fsWatcherDelayS</code> / 客户端事件后主动触发 scan / 明确该项为"最终一致"并写入验收标准） |
+| 实测 P95（新增/修改） | 判定 |
+|---|---|
+| <strong>≤ 3s</strong> | ✅ 达标 |
+| <strong>3–10s</strong> | ⚠️ 可接受，但须在报告里写明原因（如 <code>fsWatcherDelayS</code> 默认 10s）与是否调优 |
+| <strong>&gt; 10s</strong> | ❌ 不达标，必须给出缓解措施（调小 <code>fsWatcherDelayS</code> / 客户端事件后主动触发 scan / 明确该项为"最终一致"并写入验收标准） |
    删除/重命名单列，允许更宽松，但<strong>必须记录实测值</strong>。服务端公网流量为 0。</li>
 <li>20GB / 5 万文件首次同步：不丢文件、不产生重复文件、支持断点续传。</li>
 <li>拔网线 5 分钟后恢复：自动补齐，无重复传输，无异常冲突副本。</li>

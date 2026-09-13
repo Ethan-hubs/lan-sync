@@ -301,4 +301,127 @@ w_state.ps1     # 文件夹状态一行摘要
 w_e5_run.ps1    # E5 采集器（同会话运行；用 $Event.TimeGenerated）
 w_relay.ps1     # 起/停私有 strelaysrv
 w_engine.ps1    # 引擎注册为 Windows Service（当前 sc create 方式启动失败，见结论 D）
-</code></pre></main><footer>M0.5 真机实验结论（Windows + 真实跨网） · 生成于 2026-09-13</footer></div></body></html>
+</code></pre>
+<hr />
+<h2 id="9-fnat-Desktop-B-2026-09-13">9. 结论 F：NAT 后的设备经<strong>自建中继</strong>同步（Desktop-B 实测，2026-09-13 追加）</h2>
+<p>项目发起人要求把测试改到 Desktop-B（台式机 Win11）并在 D 盘划专用区，同时要求<strong>兼容 Win10/Win11</strong>。本轮完成：</p>
+<h3 id="91">9.1 环境与专用区</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>机器</td>
+<td><strong>Desktop-B = Windows 11 25H2（build 26200）</strong>，16 GB 内存，PS 5.1（无 pwsh 7），<strong>装有 Office</strong></td>
+</tr>
+<tr>
+<td>测试专用区</td>
+<td><code>D:\LanSync\m05\</code>（<code>bin/ home/ sync/ logs/</code> + <code>README-TEST-AREA.txt</code>），D: 剩余 174 GB；<strong>不碰 D 盘以外任何目录</strong></td>
+</tr>
+<tr>
+<td>清理方式</td>
+<td><code>schtasks /end /tn LanSyncEngine ; schtasks /delete /tn LanSyncEngine /f ; Remove-Item -Recurse D:\LanSync,D:\m05stage</code></td>
+</tr>
+<tr>
+<td>二进制</td>
+<td><code>syncthing.exe</code> SHA-256 <code>36A0F7BC…</code>（与 Azure 基准、WinServer-A <strong>逐位一致</strong>）</td>
+</tr>
+<tr>
+<td>引擎托管</td>
+<td><strong>计划任务 <code>LanSyncEngine</code>（/sc onstart /ru SYSTEM）</strong>——裸 <code>Start-Process</code> 会随 SSH 会话被杀；<code>sc create</code> 直接包 console 程序又会 <code>CouldNotStartService</code></td>
+</tr>
+<tr>
+<td>实例 Device ID</td>
+<td><code><DEVICE-ID></code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="92-nat">9.2 拓扑与结果（真实 NAT + 自建中继）</h3>
+<pre><code>Desktop-B（家庭宽带 NAT 后，UPnP 可用）  ──┐
+                                       ├── 自建 strelaysrv（Azure <YOUR_LINUX_HOST_IP>:22010，共享 token）
+Azure 实例 Z（公网 IP）              ──┘
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>观测项</th>
+<th>实测值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>连接方式</td>
+<td>Azure 侧 <code>type=relay-client</code>、Desktop-B 侧 <code>type=relay-server</code>，<strong>稳定走自建中继</strong>（未升级为直连）</td>
+</tr>
+<tr>
+<td>中继鉴权</td>
+<td>共享 <code>-token</code> 生效；中继 <code>pools=""</code>（私有，不入公共池）</td>
+</tr>
+<tr>
+<td>全量同步</td>
+<td><strong>2189 个文件（约 33.8 MB）在 ~60 s 内拉完</strong>，两端 <code>needFiles=0 errors=0</code></td>
+</tr>
+<tr>
+<td>中继转发量</td>
+<td><code>bytesProxied = 34,379,087 B ≈ 34.4 MB</code>（≈ 数据量，再次印证 <strong>1.00×</strong>、成本按 bytesProxied 直接算）</td>
+</tr>
+<tr>
+<td>反向同步</td>
+<td>Desktop-B 写出的 <code>locked-file.bin</code> 正常到达 Azure ✅</td>
+</tr>
+<tr>
+<td>NAT 探测</td>
+<td>Desktop-B 日志：<code>Detected NAT type = "Port restricted NAT"</code>、<code>Resolved external address via=stun.voip.aebc.com:3478</code>、<code>New external port opened (UPnP, gateway=192.168.3.1)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="93-syncthing-nat-stun">9.3 ⚠️ 新发现：Syncthing 的 NAT 穿透会<strong>默认使用公共 STUN 服务器</strong></h3>
+<p>Desktop-B 的日志明确写出：<code>Resolved external address ... via=stun.voip.aebc.com:3478</code>。
+这与我们"<strong>不依赖任何公共服务</strong>"的既定目标（PRD §7 / R11 关闭官方 discovery 与公共 relay）<strong>存在缺口</strong>：
+STUN 也是第三方公共服务。私有化部署必须二选一：</p>
+<ol>
+<li><strong>自建 STUN</strong>（coturn 只开 STUN 功能，成本极低），配置指向自己的服务器；或</li>
+<li>明确接受"仅打洞时需要 STUN"，并在文档里写明这条外部依赖（含隐私影响：STUN 服务器会看到设备公网地址）。</li>
+</ol>
+<blockquote>
+<p>这条已加入 PRD 待修清单：<strong>"关闭官方 discovery/relay" 要扩展为 "……并处理 STUN 依赖"</strong>。</p>
+</blockquote>
+<h3 id="94">9.4 打开中的文件（独占句柄）实测</h3>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用 <code>FileShare.None</code> 独占打开 <code>locked-file.bin</code> 并保持</td>
+<td>Syncthing <strong>不报错</strong>、文件夹保持 <code>idle needFiles=0</code>、<strong>不产生</strong> <code>~syncthing~*.tmp</code></td>
+</tr>
+<tr>
+<td>释放句柄后</td>
+<td>文件在数秒内同步完成，两端一致（<code>localFiles</code> 2189 → 2190），Azure 侧收到 35 字节内容 ✅</td>
+</tr>
+</tbody>
+</table>
+<p>结论：<strong>"文件被占用"不会造成数据事故或脏状态</strong>，Syncthing 会在句柄释放后补齐（与 PRD §FR-1.9 的预期一致）。</p>
+<h3 id="95-office">9.5 Office 真锁文件测试：<strong>非交互式会话下测不了</strong>（诚实标注）</h3>
+<p>用 Excel COM 自动化时失败：<code>Unable to get the SaveAs property of the Workbook class</code>——
+Office COM 需要一个<strong>交互式桌面会话</strong>，通过 SSH/计划任务（SYSTEM 或非交互）跑不起来。
+<strong>正确做法</strong>：在 Desktop-B 上远程桌面登录后，手动跑一次（脚本已备好在 <code>D:\m05stage\iao_office.ps1</code>），
+或把该用例改为"由 iao 用户在登录会话里执行"。当前状态：<strong>Office 锁文件（<code>~$*.xlsx</code>）行为仍未验证</strong>，
+但"独占句柄"这一等价路径已验证通过。</p>
+<h3 id="96-win10-win11">9.6 Win10 / Win11 兼容</h3>
+<ul>
+<li>已把要求落成规范：<strong><code>docs/Win10-Win11-兼容性要求.md</code></strong>（目标框架 <code>net10.0-windows</code> + 最低 OS <code>10.0.17763.0</code>、
+  禁 Win11 专有 UI/API、PS 5.1 语法、长路径 <code>\\?\</code>、服务包装器 shawl、可自动化的 4 条静态检查）。</li>
+<li>实测一致性：Desktop-B（Win11 25H2）与 WinServer-A（Server 2025）在 PS 版本（5.1）、<code>LongPathsEnabled=0</code>、
+  大小写碰撞语义、长路径"能同步但枚举看不见"<strong>四项上完全一致</strong> → 说明这些是 <strong>NTFS/Windows 通用行为</strong>，
+  不随版本漂移；但 <strong>机队内没有 Win10 真机</strong>，Win10 兼容目前<strong>只能靠规范约束 + 静态检查</strong>，需补一台 Win10
+  （虚拟机即可）做安装+同步验证。</li>
+</ul></main><footer>M0.5 真机实验结论（Windows + 真实跨网） · 生成于 2026-09-13</footer></div></body></html>
