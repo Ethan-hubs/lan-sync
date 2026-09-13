@@ -236,9 +236,9 @@ def run_checks() -> dict:
     # ⚠️ 实测结论（见 exp_restore.py）：**恢复前必须先暂停对端连接**，
     #    否则对端的最新版本会在 1–2 秒内把恢复结果覆盖回去（restore 接口本身返回成功）。
     try:
-        name = "restore-test.txt"
+        # 每次用全新文件名，避开上一次运行留下的同名文件与归档（否则会误判"没有归档"）
+        name = f"restore-test-{time.strftime('%H%M%S')}.txt"
         fa, fb = Path(paths("A")["sync"]) / name, Path(paths("B")["sync"]) / name
-        fa.unlink(missing_ok=True); fb.unlink(missing_ok=True)
         A.resume(idb); time.sleep(2)
 
         fa.write_text("v1")                      # ① 建立基线并同步
@@ -246,6 +246,7 @@ def run_checks() -> dict:
             if fb.exists() and fb.read_text() == "v1":
                 break
             time.sleep(0.5)
+        time.sleep(2)                            # 让两端状态向量稳定
         fa.write_text("v2")                      # ② A 改 → B 归档 v1
         versions: dict = {}
         for _ in range(60):

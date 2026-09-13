@@ -111,9 +111,9 @@
 <td><code>net_lab.py relay</code>：连接类型 <code>relay-server</code>，relay <code>/status</code> 出现 <code>numActiveSessions=1</code>、<code>numConnections=2</code>、<code>bytesProxied</code> 增长</td>
 </tr>
 <tr>
-<td>B3 负例（错误 token 必须连不上）</td>
-<td>⏳ 见本轮日志</td>
-<td><code>net_lab.py bad-token</code>（第三个实例带错误 token，预期 60s 内始终 <code>connected=false</code>）</td>
+<td><strong>B3 负例（错误 token 必须连不上）</strong></td>
+<td>✅</td>
+<td><code>net_lab.py bad-token</code>：第三个实例只配错误 token 的 relay 地址，<strong>60 秒内始终 <code>connected=false</code></strong>（Relay 使用准入有效）</td>
 </tr>
 <tr>
 <td><strong>B4 LAN 直连 / 跨网 relay 回落</strong></td>
@@ -137,6 +137,11 @@
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>总计</strong></td>
+<td><strong>9/9 通过</strong></td>
+<td><code>local-lab/REPORT.md</code></td>
+</tr>
 <tr>
 <td>C1</td>
 <td>REST 可读配置（devices/folders/listenAddresses）</td>
@@ -170,7 +175,7 @@
 <tr>
 <td>C7</td>
 <td>版本归档 + 恢复（三步流程）</td>
-<td>✅（v0.3 修正确认后）</td>
+<td>✅ <code>versions_seen=1, restored_to_v1=true, propagated_back_to_A=true</code></td>
 </tr>
 <tr>
 <td>C8</td>
@@ -180,7 +185,7 @@
 <tr>
 <td>C9</td>
 <td>时延预演（10 次，同机 localhost）</td>
-<td>✅ p50 ≈ <strong>9.98s</strong>（≈ 默认 <code>fsWatcherDelayS=10</code>，印证默认值就是主因）</td>
+<td>✅ p50 ≈ <strong>9.99–10.01s</strong>（两次运行一致；≈ 默认 <code>fsWatcherDelayS=10</code>，印证默认值就是主因）</td>
 </tr>
 </tbody>
 </table>
@@ -322,6 +327,10 @@ python3 net_lab.py bad-token # 负例：错误 token 应连不上
 python3 net_lab.py status / down
 </code></pre>
 <hr />
+<h2 id="51-e4">5.1 一条观察（供 E4 参考）</h2>
+<p>负例测试里 relay 日志的 <code>invalid token</code> 计数为 <strong>0</strong>，但错误 token 的实例确实连不上——
+说明<strong>拒绝发生在协议早期且没有留下日志</strong>。运维含义：<strong>不能靠翻 relay 日志发现"谁在拿错 token 试"</strong>，
+要发现异常得看连接数/流量侧的异常（这也是 W1/W2 想补的能力）。</p>
 <h2 id="6-m05">6. 对 M0.5 进度的影响</h2>
 <ul>
 <li><strong>G4（实验报告）</strong>：本机部分已产出结论与数字，<strong>E4 的口径问题（1.00×）已解决</strong>；
