@@ -424,4 +424,260 @@ Office COM 需要一个<strong>交互式桌面会话</strong>，通过 SSH/计�
   大小写碰撞语义、长路径"能同步但枚举看不见"<strong>四项上完全一致</strong> → 说明这些是 <strong>NTFS/Windows 通用行为</strong>，
   不随版本漂移；但 <strong>机队内没有 Win10 真机</strong>，Win10 兼容目前<strong>只能靠规范约束 + 静态检查</strong>，需补一台 Win10
   （虚拟机即可）做安装+同步验证。</li>
-</ul></main><footer>M0.5 真机实验结论（Windows + 真实跨网） · 生成于 2026-09-13</footer></div></body></html>
+</ul>
+<hr />
+<h2 id="10-g-ecs2026-09-13">10. 结论 G：中继改回<strong>阿里云 ECS</strong>（按架构纠正，2026-09-13 追加）</h2>
+<p><strong>背景</strong>：项目发起人指出偏离——原始需求与 PRD §D5 都写"复用现有<strong>阿里云</strong> ECS 当中继"，而上一轮我图快在 Azure 上起了 relay（因 Azure 恰好放行了 22000 段）。现已按架构纠正。</p>
+<h3 id="101-ecs">10.1 阿里云 ECS 上的中继（已就绪）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>机器</td>
+<td>阿里云 ECS <code><YOUR_ECS_IP></code>（Ubuntu 24.04，2 核 1.6G，40G 盘），已运行 178 天</td>
+</tr>
+<tr>
+<td>部署方式</td>
+<td><code>systemctl enable --now lansync-relay</code>（systemd 托管，<code>Restart=always</code>，<code>MemoryMax=256M</code> 防影响宝塔站点）</td>
+</tr>
+<tr>
+<td>二进制</td>
+<td><code>strelaysrv</code>（<strong>与客户端同 tag v2.1.5</strong>），SHA-256 <code>5d36e6f957a4baf2…</code>（与本机构建逐位一致）</td>
+</tr>
+<tr>
+<td>监听</td>
+<td><code>0.0.0.0:22067</code>（服务端口）、<code>127.0.0.1:22070</code>（status，仅本机）</td>
+</tr>
+<tr>
+<td>relay Device ID</td>
+<td><code><DEVICE-ID></code>（<strong>从默认日志里的 URI 直接取</strong>——正是之前验证过的简化点）</td>
+</tr>
+<tr>
+<td>内存占用</td>
+<td><strong>≈ 2.5 MB</strong>（MemoryCurrent=2596864），对 1.6G 机器几乎无感</td>
+</tr>
+<tr>
+<td>私有化</td>
+<td><code>-pools=</code> + <code>-token</code>（token 放 <code>/etc/lansync/relay-token</code>，由启动包装读取，不写进 unit 文件）</td>
+</tr>
+<tr>
+<td>本机防火墙</td>
+<td>ECS 上 <strong>ufw 是 active</strong>（默认 deny incoming）→ 已 <code>ufw allow 22067/tcp</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="102-22067">10.2 ⚠️ 待办：阿里云<strong>安全组</strong>需放行 22067</h3>
+<p>从外部探针（区分"安全组丢包"与"放行但无人监听"）实测，该实例安全组<strong>只放行 22 / 80 / 443 / 33462</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>端口</th>
+<th>结果</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>22 / 80 / 443</td>
+<td>OPEN</td>
+<td>常规</td>
+</tr>
+<tr>
+<td>33462</td>
+<td>OPEN</td>
+<td><strong>宝塔面板</strong>（BT-Panel），不能占用</td>
+</tr>
+<tr>
+<td>888 / 8888 / 3306 / 22067 / 39000-40000</td>
+<td><strong>FILTERED</strong></td>
+<td>安全组直接丢包（尽管 ufw 里 8888、39000-40000 是允许的 → 说明<strong>安全组比 ufw 更严</strong>）</td>
+</tr>
+</tbody>
+</table>
+<p>实例<strong>未挂 RAM 角色</strong>（metadata <code>/ram/security-credentials/</code> 返回 404）、也没有 aliyun CLI →
+<strong>安全组改动只能由项目发起人在控制台做</strong>（或给一个有 ECS 权限的 AccessKey）。</p>
+<h3 id="103-ecs">10.3 实测：这台 ECS 的公网带宽（比端口更关键的数字）</h3>
+<table>
+<thead>
+<tr>
+<th>方向</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>出网（ECS → 外部，即中继转发给客户端的方向）</strong></td>
+<td>20 MiB / 50.3 s ≈ <strong>3.34 Mbps</strong></td>
+</tr>
+<tr>
+<td>入网（外部 → ECS）</td>
+<td>20 MiB / 41.7 s ≈ 4.02 Mbps</td>
+</tr>
+</tbody>
+</table>
+<p><strong>含义（要写进 PRD §13 / §D5）</strong>：</p>
+<ul>
+<li>中继放在这台 ECS 上，<strong>跨网同步的硬上限就是 ~3.34 Mbps</strong>（≈ 25 MB/分 ≈ 1.5 GB/小时）。</li>
+<li>一次 20 GB 的跨网首次同步经中继要 <strong>≈ 14 小时</strong>；这还只是带宽瓶颈，未计费用。</li>
+<li>按 0.8 元/GB 折算：<strong>满速跑满一小时 ≈ 1.5 GB ≈ 1.2 元/小时</strong>；若按固定带宽计费（3–5 Mbps 档）则与流量无关。</li>
+<li>⇒ <strong>PRD §D5"先用现有 ECS 验证"成立（功能可验），但"长期用它当中继"需要重新评估</strong>：
+  要么升配带宽，要么把策略做成"打洞优先 + 中继兜底"，要么中继只服务小文件/元数据。</li>
+</ul>
+<h3 id="104">10.4 切换计划（安全组一放行即可执行）</h3>
+<ol>
+<li><code>wan_lab.py</code> 与 Desktop-B 的 listenAddresses/对端地址从 Azure relay 换成
+   <code>relay://<YOUR_ECS_IP>:22067/?id=STTOMDS-…&amp;token=&lt;阿里云 token&gt;</code>；</li>
+<li>重跑一遍 Desktop-B↔Z 的 2189 文件同步（预期比 Azure 中继慢，正好量化 ECS 带宽影响）；</li>
+<li>把「中继实测带宽 3.34 Mbps」回填 §13 成本表与 §14 工期。</li>
+</ol>
+<h3 id="105-2026-09-13">10.5 中继域名与端口方案（2026-09-13 追加）</h3>
+<p><strong>域名决策</strong>：中继统一用 <strong><code>relay.example.com</code></strong>（与既有 <code>anki.example.com</code> 同域，便于记忆与统一管理）。</p>
+<p>DNS 现状实测：</p>
+<table>
+<thead>
+<tr>
+<th>名称</th>
+<th>解析</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>example.com</code>（apex）</td>
+<td>→ <code><YOUR_ECS_IP></code>（<strong>就是这台阿里云 ECS</strong>）</td>
+</tr>
+<tr>
+<td><code>anki.example.com</code></td>
+<td>→ <code><YOUR_LINUX_HOST_IP></code>（Azure）</td>
+</tr>
+<tr>
+<td><code>relay.example.com</code></td>
+<td><strong>未创建</strong>（该域无泛解析，需手动加）</td>
+</tr>
+<tr>
+<td>权威 NS</td>
+<td><code>dns19/dns20.hichina.com</code>（阿里云解析）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>待加记录</strong>：<code>relay.example.com  A  <YOUR_ECS_IP></code>（TTL 600）。</p>
+<p><strong>端口的两条路</strong>（关键：域名不解决端口，安全组是按端口拦的）：</p>
+<table>
+<thead>
+<tr>
+<th>路</th>
+<th>做法</th>
+<th>代价</th>
+<th>何时用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A（推荐先做）</strong></td>
+<td>控制台放行 <strong>22067/tcp</strong>；客户端用 <code>relay://relay.example.com:22067/?id=…&amp;token=…</code></td>
+<td>无（不动生产站点）</td>
+<td><strong>现在</strong>（与手册 v0.3 §0 的"基线确认后再映射 443"一致）</td>
+</tr>
+<tr>
+<td><strong>B（M2）</strong></td>
+<td>在 <strong>443</strong> 上按 <strong>SNI 分流 + TLS 透传</strong>：<code>relay.example.com</code> → 本机 <code>22067</code>，其它 SNI → 原网站（站点 443 挪到 8443）</td>
+<td>要动生产站点（宝塔管理的站点配置），需低峰期 + 备份 + 回滚</td>
+<td>企业网/家宽通过率要求高时；PRD 里"relay 映射 443"的正式落地</td>
+</tr>
+</tbody>
+</table>
+<p><strong>路 B 的可行性已实测</strong>：ECS 的 nginx 1.28.1 带 <code>--with-stream</code> + <code>--with-stream_ssl_preread_module</code>；
+配置草稿已写好并<strong>语法验证通过</strong>（<code>/root/lansync/nginx-stream-relay.conf</code>，<strong>未启用、未 reload</strong>）。
+透传成立的前提已确认：<strong>Syncthing relay 协议本身就是 TLS，客户端 pin 的是 relay 的 Device ID（证书指纹），
+与公共 CA 无关</strong> → 中转不拆 TLS 也能通过校验，因此<strong>域名不需要申请受信证书</strong>。</p>
+<h3 id="106-2026-09-13">10.6 切换完成：两端已走<strong>阿里云中继</strong>（2026-09-13）</h3>
+<p>项目发起人已完成 DNS 与安全组配置，实测验证与切换结果：</p>
+<table>
+<thead>
+<tr>
+<th>验证项</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DNS <code>relay.example.com</code></td>
+<td>✅ → <code><YOUR_ECS_IP></code>（223.5.5.5 与 8.8.8.8 双验证）</td>
+</tr>
+<tr>
+<td>端口 22067 外部可达</td>
+<td>✅ 从 Azure 拨通（域名与 IP 皆可）</td>
+</tr>
+<tr>
+<td>阿里云中继服务</td>
+<td>✅ <code>lansync-relay</code> active，监听 <code>*:22067</code>，ufw 已放行</td>
+</tr>
+<tr>
+<td>Desktop-B（NAT 后）</td>
+<td>✅ <code>type=relay-client addr=<YOUR_ECS_IP>:22067</code>（<strong>经域名解析到阿里云 ECS</strong>）</td>
+</tr>
+<tr>
+<td>Z（Azure）</td>
+<td>✅ <code>type=relay-server addr=<YOUR_ECS_IP>:22067</code></td>
+</tr>
+<tr>
+<td>中继侧</td>
+<td><code>numConnections=2, numActiveSessions=1, numProxies=2</code> ✅</td>
+</tr>
+</tbody>
+</table>
+<p><strong>客户端配置（定稿）</strong>：</p>
+<pre><code>relay://relay.example.com:22067/?id=<DEVICE-ID>&amp;token=&lt;共享 token&gt;
+</code></pre>
+<h3 id="107-12-mbps">10.7 ⚠️ 关键性能数字：经阿里云中继的实际吞吐 ≈ <strong>1.2 Mbps</strong></h3>
+<p>用同一个 20 MiB 不可压缩文件做定点测量（Z → 阿里云中继 → Desktop-B）：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>实测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>端到端耗时</td>
+<td><strong>136.7 s</strong></td>
+</tr>
+<tr>
+<td><strong>有效吞吐</strong></td>
+<td><strong>1.23 Mbps</strong></td>
+</tr>
+<tr>
+<td>中继 <code>bytesProxied</code> 增量</td>
+<td>21,041,253 B = <strong>20.1 MiB</strong>（再次确认 <strong>1.00×</strong>，成本按 bytesProxied 直算）</td>
+</tr>
+<tr>
+<td>对比：ECS 裸链路出网</td>
+<td>3.34 Mbps（同一台机器、无中继转发、SSH 传输实测）</td>
+</tr>
+<tr>
+<td>对比：此前 Azure 中继（不同文件构成，仅供参考）</td>
+<td>33.8 MB / ~60 s ≈ 4.5 Mbps</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论与影响（要回填 §13/§14）</strong>：</p>
+<ol>
+<li><strong>中继放这台 ECS 上，实测吞吐只有 ~1.2 Mbps</strong>（比裸链路 3.34 Mbps 还低约 2.7 倍）——
+   多跳转发（Z→ECS→家庭）、小机器（2 核 1.6G，还跑着宝塔站点）、TCP 跨长 RTT 三样叠加所致。</li>
+<li>换算：<strong>20 GB 跨网首同步 = 37 小时</strong>（按 1.23 Mbps）；即便按裸链路 3.34 Mbps 也要 14 小时。</li>
+<li>因此中继的定位必须是：<strong>打洞/直连失败时的兜底 + 小文件与元数据</strong>；
+   大文件跨网<strong>不能指望中继</strong>（要么打通直连，要么用户自己走别的通道）。</li>
+<li>成本：1.23 Mbps 满速 ≈ 0.55 GB/小时 ≈ <strong>0.44 元/小时</strong>；若真跑满 37 小时（20GB）≈ <strong>16 元/次</strong>。</li>
+<li>若要当中继长期用：升带宽（阿里云带宽单价高）或换按流量计费的更大机器；
+   <strong>更划算的方向是把打洞成功率做上去</strong>（这也是 PRD §G2 的观测指标）。</li>
+</ol>
+<blockquote>
+<p>安全提示：切换过程中 PowerShell 回显把完整 relay URI（含 token）打印到了日志里。
+该 token 只是我们自建中继的共享准入串，影响面限于"蹭中继带宽"。
+建议<strong>轮换一次</strong>：改 <code>/etc/lansync/relay-token</code> → <code>systemctl restart lansync-relay</code> → 两端更新 URI（3 分钟）。</p>
+</blockquote></main><footer>M0.5 真机实验结论（Windows + 真实跨网） · 生成于 2026-09-13</footer></div></body></html>
