@@ -12,6 +12,7 @@ internal sealed class SyncthingPair : IAsyncDisposable
 {
     private const string RequiredVersion = "v2.1.5";
     private const string RequiredWindowsSha256 = "36a0f7bc372f64fa7cc4f5654fa324c0dd9f7fef2e07565e00c6e1cf73f50344";
+    private const string RequiredLinuxSha256 = "ab0ea5f307101e5aa1b4c599164cfc2cc62bddcb8f53e1b3204fc77ac54ce07f";
     private readonly List<Process> _processes = [];
     private readonly List<HttpClient> _clients = [];
     private readonly bool _ownsProcesses;
@@ -166,9 +167,10 @@ internal sealed class SyncthingPair : IAsyncDisposable
         await using (var stream = File.OpenRead(fullBinary))
         {
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream)).ToLowerInvariant();
-            if (!string.Equals(hash, RequiredWindowsSha256, StringComparison.Ordinal))
+            var expectedHash = GetExpectedBinarySha256();
+            if (!string.Equals(hash, expectedHash, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException($"Syncthing binary SHA-256 mismatch. Expected {RequiredWindowsSha256}, got {hash}.");
+                throw new InvalidOperationException($"Syncthing binary SHA-256 mismatch. Expected {expectedHash}, got {hash}.");
             }
         }
 
@@ -312,6 +314,33 @@ internal sealed class SyncthingPair : IAsyncDisposable
     }
 
     private static Uri EnsureTrailingSlash(string gui) => new(gui.TrimEnd('/') + "/", UriKind.Absolute);
+
+    internal static string GetExpectedBinarySha256()
+    {
+        var overrideHash = Environment.GetEnvironmentVariable("LANSW_SYNCTHING_SHA256")?.Trim();
+        if (!string.IsNullOrEmpty(overrideHash))
+        {
+            if (overrideHash.Length != 64 || overrideHash.Any(character => !Uri.IsHexDigit(character)))
+            {
+                throw new InvalidOperationException("LANSW_SYNCTHING_SHA256 must be a 64-character hexadecimal SHA-256 value.");
+            }
+
+            return overrideHash.ToLowerInvariant();
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return RequiredWindowsSha256;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return RequiredLinuxSha256;
+        }
+
+        throw new PlatformNotSupportedException(
+            "No built-in Syncthing v2.1.5 SHA-256 is known for this OS. Set LANSW_SYNCTHING_SHA256 explicitly.");
+    }
 
     private static int GetFreePort()
     {
