@@ -49,10 +49,12 @@
 | 文件夹状态 | `GET /rest/db/status?folder=` |
 
 **实现要点（实测）**
-1. **`versioning.params` 的值必须是字符串**：`{"maxAge": "30"}` ✅；传数字 30 → `HTTP 400
+1. **`versioning.params` 的值必须是字符串**：`{"maxAge": "2592000"}` ✅（30 天）；传数字 30 → `HTTP 400
    json: cannot unmarshal number into Go struct field ... params.maxAge of type string`
    （源码依据：`lib/config/versioningconfiguration.go` 里 `Params map[string]string`；顶层 `cleanupIntervalS` 反而是 int）。
-2. 版本策略落地为 **staggered + `maxAge="30"`**（PRD §FR-3.3 / ADR A9），归档目录 `.stversions`。
+   ⚠️ **而且这个参数的单位是秒**（staggered 版式器按秒解析，源码 `lib/versioner/staggered.go:39`，默认 31536000＝1 年）：
+   写 `"30"` 只保留 **30 秒**，**保留 30 天必须写 `"2592000"`**。
+2. 版本策略落地为 **staggered + 保留 30 天＝`maxAge="2592000"`**（PRD §FR-3.3 / ADR A9），归档目录 `.stversions`。
 3. `.stignore` 由 Adapter 经 `/rest/db/ignores` 管理，**UI 不暴露这个文件名**（PRD §FR-1.7）。
    实测：写入 `*.labignore` 后，该模式的文件确实不再同步到对端。
 4. 加设备时给 `addresses: ["dynamic"]` 表示"靠发现/中继去找"；给显式地址（`tcp://host:port`、
@@ -149,6 +151,7 @@ connected=false → offline（红）；paused=true 单独标注
 | F8 | `/rest/folder/versions` 无"另存"参数 | 官方文档 + 实测 | 恢复交互只做"恢复/取消" |
 | F9 | 忽略规则走 `/rest/db/ignores`，被忽略的文件确实不同步 | 实测 | UI 不暴露 `.stignore` |
 | F10 | relay 的 `ID:` 只在 `-debug` 下打印；**URI 默认就会打印** | 源码（`main.go:192` 在 `if debug` 内；`:270` 无条件） | M0.5 手册 §3.3 的取 ID 步骤 |
+| F11 | **`versioning.params.maxAge` 的单位是秒**（staggered；默认 31536000＝1 年）。`simple`/`trashcan` 用的是 `cleanoutDays`（单位＝**天**） | 源码 `lib/versioner/staggered.go:39`、`simple.go:95`、`trashcan.go:67` | 保留 30 天必须写 `"2592000"`；写 `"30"` 只有 30 秒 |
 
 ---
 

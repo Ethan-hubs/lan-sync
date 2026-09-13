@@ -467,10 +467,10 @@ C:\LanSync\m05\bin\syncthing.exe serve `
 <ol start="4">
 <li>删除公共 relay 的动态地址 / <code>default</code> 项。</li>
 <li>远端设备地址保持 <code>dynamic</code>。</li>
-<li>建本轮专用 Folder（A/B/C 共享）；启用 <strong>Staggered Versioning，<code>maxAge = 30</code> 天</strong>。</li>
+<li>建本轮专用 Folder（A/B/C 共享）；启用 <strong>Staggered Versioning，保留 30 天＝<code>maxAge = "2592000"</code>（⚠️ 单位是秒）</strong>。</li>
 <li>设置 <code>.stignore</code>：只放本轮明确忽略项（<code>~$*</code>、<code>.~lock.*</code>、<code>Thumbs.db</code>、<code>.DS_Store</code>），<strong>不要</strong>默认忽略 <code>.git</code> / <code>node_modules</code> / <code>*.tmp</code>。</li>
 <li><strong>用 REST 生成文件夹配置时注意类型（v0.3 实测）</strong>：<code>versioning.params</code> 的值必须是<strong>字符串</strong>，
-   <code>{"maxAge": "30"}</code> ✅；传数字会得到 <code>HTTP 400 cannot unmarshal number into ... of type string</code>
+   <code>{"maxAge": "2592000"}</code> ✅（值必须是<strong>字符串</strong>，且 <code>maxAge</code> 的单位是<strong>秒</strong>——写 <code>"30"</code> 只保留 30 秒）；传数字会得到 <code>HTTP 400 cannot unmarshal number into ... of type string</code>
    （源码：<code>lib/config/versioningconfiguration.go</code> 里 <code>Params map[string]string</code>）。顶层 <code>cleanupIntervalS</code> 反而是 int。</li>
 </ol>
 <h3 id="41-rest-adapter">4.1 用 REST 证明 Adapter 未来可控</h3>

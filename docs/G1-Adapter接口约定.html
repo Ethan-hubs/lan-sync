@@ -20,7 +20,7 @@
  hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
  footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
 </style></head><body>
-<header class="top"><div class="wrap"><h1>G1 · Syncthing Adapter 接口约定 v1<span class="badge">每条都在真机验证过</span></h1><div class="meta">2026-09-13 · 7 条职责 + 8 条上游事实 + 10 条实测注意点 · 参考实现 adapter/syncthing_adapter.py</div></div></header>
+<header class="top"><div class="wrap"><h1>G1 · Syncthing Adapter 接口约定 v1<span class="badge">每条都在真机验证过</span></h1><div class="meta">2026-09-13 · 7 条职责 + 11 条上游事实 + 10 条实测注意点 · 参考实现 adapter/syncthing_adapter.py</div></div></header>
 <div class="wrap"><main><h1 id="g1-syncthing-adapter-v12026-09-13">G1 · Syncthing Adapter 接口约定（v1，2026-09-13）</h1>
 <blockquote>
 <p>对应《局域网同步系统-产品文档-v0.9(rc)》§2.6 准入条件 G1 与 §6.1.1 职责 7 条。
@@ -127,10 +127,12 @@
 </tbody>
 </table>
 <p><strong>实现要点（实测）</strong>
-1. <strong><code>versioning.params</code> 的值必须是字符串</strong>：<code>{"maxAge": "30"}</code> ✅；传数字 30 → <code>HTTP 400
+1. <strong><code>versioning.params</code> 的值必须是字符串</strong>：<code>{"maxAge": "2592000"}</code> ✅（30 天）；传数字 30 → <code>HTTP 400
    json: cannot unmarshal number into Go struct field ... params.maxAge of type string</code>
    （源码依据：<code>lib/config/versioningconfiguration.go</code> 里 <code>Params map[string]string</code>；顶层 <code>cleanupIntervalS</code> 反而是 int）。
-2. 版本策略落地为 <strong>staggered + <code>maxAge="30"</code></strong>（PRD §FR-3.3 / ADR A9），归档目录 <code>.stversions</code>。
+   ⚠️ <strong>而且这个参数的单位是秒</strong>（staggered 版式器按秒解析，源码 <code>lib/versioner/staggered.go:39</code>，默认 31536000＝1 年）：
+   写 <code>"30"</code> 只保留 <strong>30 秒</strong>，<strong>保留 30 天必须写 <code>"2592000"</code></strong>。
+2. 版本策略落地为 <strong>staggered + 保留 30 天＝<code>maxAge="2592000"</code></strong>（PRD §FR-3.3 / ADR A9），归档目录 <code>.stversions</code>。
 3. <code>.stignore</code> 由 Adapter 经 <code>/rest/db/ignores</code> 管理，<strong>UI 不暴露这个文件名</strong>（PRD §FR-1.7）。
    实测：写入 <code>*.labignore</code> 后，该模式的文件确实不再同步到对端。
 4. 加设备时给 <code>addresses: ["dynamic"]</code> 表示"靠发现/中继去找"；给显式地址（<code>tcp://host:port</code>、
@@ -354,6 +356,12 @@ connected=false → offline（红）；paused=true 单独标注
 <td>relay 的 <code>ID:</code> 只在 <code>-debug</code> 下打印；<strong>URI 默认就会打印</strong></td>
 <td>源码（<code>main.go:192</code> 在 <code>if debug</code> 内；<code>:270</code> 无条件）</td>
 <td>M0.5 手册 §3.3 的取 ID 步骤</td>
+</tr>
+<tr>
+<td>F11</td>
+<td><strong><code>versioning.params.maxAge</code> 的单位是秒</strong>（staggered；默认 31536000＝1 年）。<code>simple</code>/<code>trashcan</code> 用的是 <code>cleanoutDays</code>（单位＝<strong>天</strong>）</td>
+<td>源码 <code>lib/versioner/staggered.go:39</code>、<code>simple.go:95</code>、<code>trashcan.go:67</code></td>
+<td>保留 30 天必须写 <code>"2592000"</code>；写 <code>"30"</code> 只有 30 秒</td>
 </tr>
 </tbody>
 </table>

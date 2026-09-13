@@ -225,7 +225,7 @@
 </tbody>
 </table>
 <hr />
-<h2 id="3-7">3. 本轮实验改掉了 7 个"文档里的错误假设"</h2>
+<h2 id="3-8">3. 本轮实验改掉了 8 个"文档里的错误假设"</h2>
 <p>这些全部已落进手册 v0.3 与 G1 契约（附变更记录）：</p>
 <table>
 <thead>
@@ -264,8 +264,14 @@
 <tr>
 <td>5</td>
 <td><code>versioning.params</code> 可以传数字</td>
-<td>必须<strong>字符串</strong>：<code>{"maxAge": "30"}</code>；传数字 → <code>HTTP 400 cannot unmarshal number ... of type string</code></td>
+<td>必须<strong>字符串</strong>：<code>{"maxAge": "2592000"}</code>；传数字 → <code>HTTP 400 cannot unmarshal number ... of type string</code></td>
 <td>生成配置的类型正确性</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>maxAge = 30</code> 就是 30 天（2026-09-13 追加）</td>
+<td><strong>错，单位是秒</strong>：staggered 版式器按秒解析（源码 <code>lib/versioner/staggered.go:39</code>，默认 31536000＝1 年），参考实现一度直接传天数</td>
+<td>保留 30 天必须写 <code>"2592000"</code>；已在 G1 F11 / M0.5 手册 / PRD 勘误1 / 参考实现中更正</td>
 </tr>
 <tr>
 <td>6</td>
@@ -317,7 +323,7 @@
 <hr />
 <h2 id="5">5. 复现方式</h2>
 <pre><code class="language-bash">cd /data/lan-sync/adapter
-python3 lab.py up            # 起两个实例、私有化、互加设备、建文件夹（staggered maxAge=30）
+python3 lab.py up            # 起两个实例、私有化、互加设备、建文件夹（staggered 保留30天＝maxAge 2592000 秒）
 python3 lab.py checks        # 9 项契约检查 → local-lab/REPORT.md
 python3 exp_restore.py       # 恢复语义两组对照 → local-lab/exp-restore.json
 python3 net_lab.py up        # 起 stdiscosrv + 私有 strelaysrv（共享 token）

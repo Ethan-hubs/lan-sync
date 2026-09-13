@@ -108,7 +108,7 @@ def cmd_up(_: argparse.Namespace) -> None:
             ad.accept_pending(dev)
     time.sleep(1)
 
-    # —— 建共享文件夹（staggered versioning，maxAge=30，对应 PRD §FR-3.3 / ADR A9）
+    # —— 建共享文件夹（staggered versioning，保留 30 天＝maxAge 2592000 秒，对应 PRD §FR-3.3 / ADR A9）
     for name in INSTANCES:
         ad = adapter(name)
         existing = [f["id"] for f in ad.get_config()["folders"]]
@@ -120,7 +120,7 @@ def cmd_up(_: argparse.Namespace) -> None:
             device_ids=[ids[n] for n in INSTANCES], versioning_max_age_days=30,
         ))
         ad.set_ignores(FOLDER_ID, IGNORE_PATTERNS)
-        print(f"[{name}] 文件夹已建（staggered/maxAge=30）+ .stignore 已设")
+        print(f"[{name}] 文件夹已建（staggered/保留30天=maxAge 2592000秒）+ .stignore 已设")
     print("\n完成。接着跑：python3 lab.py checks")
 
 

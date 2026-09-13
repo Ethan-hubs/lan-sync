@@ -49,7 +49,7 @@ class FolderSpec:
     device_ids: list[str] = field(default_factory=list)
     folder_type: str = "sendreceive"          # sendreceive / sendonly / receiveonly / receiveencrypted
     fs_watcher_delay_s: float = 10.0          # 默认 10（源码 default:"10"），E5 会调它
-    versioning_max_age_days: int = 30         # staggered versioning；0 = 永久保留
+    versioning_max_age_days: int = 30         # 产品语义=天；写入 Syncthing 时换算成秒（maxAge 单位是秒）
     versioning_type: str = "staggered"
     ignores: list[str] | None = None
 
@@ -246,7 +246,8 @@ class SyncthingAdapter:
             #    错法：{"maxAge": 30} → HTTP 400 cannot unmarshal number into ... of type string
             "versioning": {
                 "type": spec.versioning_type,
-                "params": {"maxAge": str(spec.versioning_max_age_days), "cleanupIntervalS": "3600"},
+                # ⚠️ maxAge 单位是**秒**不是天（源码 lib/versioner/staggered.go:39，默认 31536000=1 年）
+                "params": {"maxAge": str(int(spec.versioning_max_age_days) * 86400), "cleanupIntervalS": "3600"},
                 "cleanupIntervalS": 3600,
             },
         }

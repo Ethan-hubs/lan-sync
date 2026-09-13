@@ -85,7 +85,7 @@ def cmd_up(_) -> None:
                                  path=str(zp()["sync"]), device_ids=[zid()],
                                  versioning_max_age_days=30))
         ad.set_ignores(FOLDER_ID, ["~$*", ".~lock.*", "Thumbs.db", ".DS_Store"])
-        print(f"[Z] 文件夹已建：{FOLDER_ID}（staggered maxAge=30）+ ignores")
+        print(f"[Z] 文件夹已建：{FOLDER_ID}（staggered 保留30天=maxAge 2592000秒）+ ignores")
     else:
         print("[Z] 文件夹已存在")
     print("\n下一步：在 WinServer-A 上跑 w_setup.ps1（带 Z_DEVICE_ID），然后 `peer <W_DEVICE_ID>`")
