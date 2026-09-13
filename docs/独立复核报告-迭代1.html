@@ -320,4 +320,21 @@ folder 配置已正确清理，但 <code>AddDeviceAsync</code> 加的设备条�
 </table>
 <h3 id="_2">结论</h3>
 <p><strong>迭代 1 及其两项改进均通过独立复核</strong>，且复核通道已从"改副本"升级为"零改动全自动"。迭代 2 建议范围：C7 版本恢复事务（<code>pause(对端) → restore → 响应字典判空 → finally resume</code>，范围规则见交接件 §10 决定 3）+ G1 增补 B-1 的只读呈现部分。</p>
-<p>—— 太极，2026-09-14 00:35 CST</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
+<p>—— 太极，2026-09-14 00:35 CST</p>
+<h3 id="61-dotnet-test">6.1 复现性提醒：实现机（华为笔记本）上 <code>dotnet test</code> 目前不可直接复现</h3>
+<p>我从 SSH 实测（<code>D:\GPTWork\lan-sync</code>）：</p>
+<pre><code>&gt; dotnet --version            →  8.0.301 [C:\Program Files\dotnet\sdk]
+&gt; dotnet test                 →  A compatible .NET SDK was not found.
+                                 Requested SDK version: 10.0.401
+                                 global.json file: D:\GPTWork\lan-sync\global.json
+                                 Installed SDKs: (空)
+</code></pre>
+<p>也就是说：<strong>该机器 PATH 上的 .NET 只有 8.0.301，而仓库 <code>global.json</code> 钉的是 10.0.401</strong> → 谁在这台机器上直接 <code>dotnet test</code> 都会失败。但该机确实存在过 10.0.401 的构建产物与 SDK 使用痕迹（<code>%USERPROFILE%\.dotnet\10.0.401.dotnetFirstUseSentinel</code>、<code>bin/Debug/net10.0-windows/*</code>），说明 Codex 是在某个能拿到 SDK 10 的环境里跑的（未走这台机器的默认 PATH）。</p>
+<p><strong>建议（项目发起人/Codex 二选一）</strong>：
+1. 在这台机器上装一次机器级 SDK 10（<code>winget install Microsoft.DotNet.SDK.10</code>），之后你本人也能一键复现 <code>dotnet test</code>；
+2. 或在仓库 README 里写明"构建环境约定"（SDK 版本 + 若为非常规安装，给出实际路径/环境变量），避免"实现方能跑、验收方跑不了"。</p>
+<blockquote>
+<p>与我方复核的关系：<strong>不影响结论</strong>——我在自己机器上用 10.0.401 零改动跑通了全部四种模式；此处只是提醒"实现机的默认环境还不具备可复现性"。</p>
+</blockquote>
+<h3 id="62-p2">6.2 一条 P2（架构权衡，非缺陷）</h3>
+<p>四个工程改成 <code>net10.0</code> 后，Windows 平台分析器（CA1416 / <code>SupportedOSPlatformVersion</code>）不再作用于库 —— 将来若库要直接调用 Windows API（例如在库层做 DPAPI 保护 API key），编译期就不会再给出"该 API 在 Win10 1809 不可用"这类警告。建议：<strong>保持库平台中立</strong>，把平台相关调用收在托盘工程（保留 <code>net10.0-windows</code> + <code>10.0.17763.0</code>）；若确实需要在库里调用，再给该库加 <code>net10.0-windows</code> 作为第二目标框架。</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
