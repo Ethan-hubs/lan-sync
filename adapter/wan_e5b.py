@@ -38,7 +38,7 @@ def start_session(seconds: int):
 def main() -> None:
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     tag = sys.argv[2] if len(sys.argv) > 2 else time.strftime("%H%M%S")
-    window = 40 + n * 2 + 60
+    window = 60 + n * 3 + 150      # 经中继较慢：给足窗口，否则后面的文件落在窗口外
 
     print("=== E5 跨网感知时延（会话内采集 + 同步回流）===")
     push_watcher_script()
@@ -111,7 +111,7 @@ def main() -> None:
            "all_ms": lat, "csv_rows": len(rows),
            "collector_dispatch_lag_p50_ms": lag[len(lag)//2] if lag else None,
            "collector_dispatch_lag_max_ms": lag[-1] if lag else None,
-           "note": "跨网 Azure→WinServer-A 直连(tcp)，fsWatcherDelayS=10，采集=FileSystemWatcher($Event.TimeGenerated)"}
+           "note": f"跨网 Azure→{TARGET}，经阿里云中继(relay.example.com:22067)，fsWatcherDelayS=10，采集=FileSystemWatcher($Event.TimeGenerated)"}
     Path(f"/data/lan-sync/local-lab/e5-wan-{tag}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in out.items() if k != "all_ms"}, ensure_ascii=False, indent=2))
 
