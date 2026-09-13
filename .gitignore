@@ -8,3 +8,4 @@ secrets/
 M05-报告.md
 __pycache__/
 *.pyc
+local-lab/

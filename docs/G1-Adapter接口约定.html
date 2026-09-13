@@ -1,0 +1,404 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>G1 · Syncthing Adapter 接口约定 v1</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>G1 · Syncthing Adapter 接口约定 v1<span class="badge">每条都在真机验证过</span></h1><div class="meta">2026-09-13 · 7 条职责 + 8 条上游事实 + 10 条实测注意点 · 参考实现 adapter/syncthing_adapter.py</div></div></header>
+<div class="wrap"><main><h1 id="g1-syncthing-adapter-v12026-09-13">G1 · Syncthing Adapter 接口约定（v1，2026-09-13）</h1>
+<blockquote>
+<p>对应《局域网同步系统-产品文档-v0.9(rc)》§2.6 准入条件 G1 与 §6.1.1 职责 7 条。
+<strong>本约定的每一条 REST 行为都在本机真机验证过</strong>（Syncthing v2.1.5 + 自建 stdiscosrv/strelaysrv，
+见 <code>adapter/lab.py</code>、<code>adapter/net_lab.py</code>、<code>local-lab/REPORT.md</code>）。
+参考实现：<code>adapter/syncthing_adapter.py</code>（Python，仅用于验证契约；产品语言未定，契约本身语言无关）。</p>
+</blockquote>
+<hr />
+<h2 id="0-adapter">0. 边界（先写死，防止 Adapter 变成第二个引擎）</h2>
+<p><strong>做</strong>：配置读写 · 设备与文件夹管理 · 事件订阅 · 连接类型判定 · pause/resume · 版本恢复 · 进程健康检查。</p>
+<p><strong>不做</strong>：不改块算法与哈希 · 不实现同步协议 · 不实现 NAT 穿透与打洞 · 不实现授权/鉴权 ·
+不自己造 discovery/relay/信令 · 不重命名冲突文件（保持原生 <code>.sync-conflict-*</code>，只在 UI 呈现层翻译）。</p>
+<blockquote>
+<p>判据：凡"Syncthing 已经做完的事"，Adapter 只做<strong>读写与转发</strong>，不做替换（PRD §2.7）。</p>
+</blockquote>
+<hr />
+<h2 id="1-1">1. 职责 1：配置读写</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>REST</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读整份配置</td>
+<td><code>GET /rest/config</code></td>
+<td>含 devices/folders/options</td>
+</tr>
+<tr>
+<td>读/改选项</td>
+<td><code>GET</code> / <code>PUT /rest/config/options</code></td>
+<td>改前先 GET 再只改差异键（PUT 是整体覆盖）</td>
+</tr>
+<tr>
+<td>是否需要重启</td>
+<td><code>GET /rest/config/restart-required</code></td>
+<td><code>{"requiresRestart": bool}</code></td>
+</tr>
+<tr>
+<td>重启生效</td>
+<td><code>POST /rest/system/restart</code></td>
+<td>重启后需重新等到 <code>/rest/system/ping</code> 可用</td>
+</tr>
+<tr>
+<td>默认模板</td>
+<td><code>GET/PUT /rest/config/defaults/{folder,device,ignores}</code></td>
+<td>新建文件夹/设备时取默认值</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点（实测）</strong>
+1. <code>PUT /rest/config/options</code> 是<strong>整体替换</strong>：必须 GET → 改键 → PUT，否则会清掉未提交的字段。
+2. <code>restart-required</code> 只有部分选项会置位（例如 <code>listenAddresses</code>）；设备/文件夹变更通常<strong>不需要</strong>重启。
+3. <strong>改地址不会断掉已有连接</strong>：把对端地址改成 relay URI 后，原来的直连会继续用着（实测：连接类型仍为 <code>tcp-client</code>）。
+   需要切换路径时必须<strong>改 listen 地址并主动 <code>POST /rest/system/restart</code></strong>。</p>
+<h2 id="2-2">2. 职责 2：设备与文件夹</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>REST</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>列/增设备</td>
+<td><code>GET</code> / <code>POST /rest/config/devices</code></td>
+</tr>
+<tr>
+<td>改/删设备</td>
+<td><code>PUT</code> / <code>DELETE /rest/config/devices/{id}</code></td>
+</tr>
+<tr>
+<td>待批准设备</td>
+<td><code>GET</code> / <code>POST</code> / <code>DELETE /rest/cluster/pending/devices</code></td>
+</tr>
+<tr>
+<td>列/增文件夹</td>
+<td><code>GET</code> / <code>POST /rest/config/folders</code></td>
+</tr>
+<tr>
+<td>改/删文件夹</td>
+<td><code>GET</code> / <code>PUT</code> / <code>DELETE /rest/config/folders/{id}</code></td>
+</tr>
+<tr>
+<td>读取忽略规则</td>
+<td><code>GET /rest/db/ignores?folder=</code></td>
+</tr>
+<tr>
+<td>写忽略规则</td>
+<td><code>POST /rest/db/ignores?folder=</code></td>
+</tr>
+<tr>
+<td>触发重扫</td>
+<td><code>POST /rest/db/scan?folder=&amp;sub=</code></td>
+</tr>
+<tr>
+<td>文件夹状态</td>
+<td><code>GET /rest/db/status?folder=</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点（实测）</strong>
+1. <strong><code>versioning.params</code> 的值必须是字符串</strong>：<code>{"maxAge": "30"}</code> ✅；传数字 30 → <code>HTTP 400
+   json: cannot unmarshal number into Go struct field ... params.maxAge of type string</code>
+   （源码依据：<code>lib/config/versioningconfiguration.go</code> 里 <code>Params map[string]string</code>；顶层 <code>cleanupIntervalS</code> 反而是 int）。
+2. 版本策略落地为 <strong>staggered + <code>maxAge="30"</code></strong>（PRD §FR-3.3 / ADR A9），归档目录 <code>.stversions</code>。
+3. <code>.stignore</code> 由 Adapter 经 <code>/rest/db/ignores</code> 管理，<strong>UI 不暴露这个文件名</strong>（PRD §FR-1.7）。
+   实测：写入 <code>*.labignore</code> 后，该模式的文件确实不再同步到对端。
+4. 加设备时给 <code>addresses: ["dynamic"]</code> 表示"靠发现/中继去找"；给显式地址（<code>tcp://host:port</code>、
+   <code>relay://relay/?id=...&amp;token=...</code>）则强制走该路径 —— 这是 E4-B 强制走 relay 的开关。</p>
+<h2 id="3-3">3. 职责 3：事件订阅</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>REST</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>事件流（长轮询）</td>
+<td><code>GET /rest/events?since=&amp;timeout=&amp;limit=&amp;events=</code>（可多次给 <code>events=</code>）</td>
+</tr>
+<tr>
+<td>磁盘事件</td>
+<td><code>GET /rest/events/disk?since=&amp;timeout=</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong>：<code>since</code> 用上一次返回事件里的 <code>id</code> 续订；超时无事件返回空数组是<strong>正常</strong>行为（不是错误），
+调用方应循环续订。实测 <code>LocalChangeDetected</code> 可稳定收到。</p>
+<h2 id="4-4ui">4. 职责 4：连接类型（UI 状态灯的数据源）</h2>
+<p><code>GET /rest/system/connections</code> → <code>connections[&lt;deviceID&gt;]</code>，字段：
+<code>address</code> <code>at</code> <code>clientVersion</code> <code>connected</code> <code>inBytesTotal</code> <code>isLocal</code> <code>outBytesTotal</code> <code>paused</code> <code>startedAt</code> <code>type</code>。</p>
+<p><code>type</code> 取值（官方 REST 文档）：<code>tcp-client</code> <code>tcp-server</code> <code>quic-client</code> <code>quic-server</code> <code>relay-client</code> <code>relay-server</code>。</p>
+<p><strong>映射规则（Adapter 唯一需要"解释"的地方）</strong></p>
+<pre><code>tcp-*/quic-*  → direct（绿）
+relay-*       → relay（黄）
+connected=false → offline（红）；paused=true 单独标注
+</code></pre>
+<p>实测样例：直连时 A 侧 <code>tcp-client → 127.0.0.1:22001</code>，B 侧 <code>tcp-server</code>；
+强制 relay 后 A 侧变为 <code>relay-server</code>，relay 的 <code>/status</code> 同时出现 <code>numActiveSessions ≥ 1</code>。</p>
+<h2 id="5-5pause-resume">5. 职责 5：pause / resume</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>REST</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全停 / 全恢复</td>
+<td><code>POST /rest/system/pause</code> / <code>POST /rest/system/resume</code></td>
+</tr>
+<tr>
+<td>单设备</td>
+<td><code>POST /rest/system/pause?device=&lt;id&gt;</code> / <code>resume?device=&lt;id&gt;</code></td>
+</tr>
+<tr>
+<td>单文件夹</td>
+<td><code>PUT /rest/config/folders/{id}</code>（<code>{"paused": true/false}</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>实测：暂停后连接立即断开（<code>connected=false</code>），恢复后能自动重建。</p>
+<blockquote>
+<p><strong>产品语义</strong>：<code>pause</code> 在 PRD 里不只是 UI 功能，它还是<strong>版本恢复的前置步骤</strong>（见职责 6）。</p>
+</blockquote>
+<h2 id="6-6">6. 职责 6：版本恢复（实测出的一条硬流程）</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>REST</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>列可恢复版本</td>
+<td><code>GET /rest/folder/versions?folder=&amp;file=</code></td>
+</tr>
+<tr>
+<td>执行恢复</td>
+<td><code>POST /rest/folder/versions?folder=</code>，body <code>{"&lt;相对路径&gt;": "&lt;versionTime&gt;"}</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点（三条，全部来自实测）</strong>
+1. <strong>版本归档只在"远端变更替换/删除本地文件"时产生</strong>；本机自己删/改的文件不会在本机归档
+   （源码文档：versioning 只处理 <em>changes received from other devices</em>）。
+2. <strong>恢复必须先把对端连接暂停</strong>，否则对端的较新版本会在 1–2 秒内把恢复结果覆盖回去——
+   而且 <code>POST</code> 接口本身<strong>返回成功</strong>（不报错），属于"静默失效"。
+   实测对照（<code>adapter/exp_restore.py</code>，结论存 <code>local-lab/exp-restore.json</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>恢复后 B 内容</th>
+<th>最终 A/B</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不暂停对端</td>
+<td>v1（瞬间）</td>
+<td>v2 / v2</td>
+<td><strong>恢复被覆盖，等于无效</strong></td>
+</tr>
+<tr>
+<td>先 <code>pause</code> 对端再恢复</td>
+<td>v1</td>
+<td>v1 / v1</td>
+<td>✅ 有效，且 v1 会正常传播回对端</td>
+</tr>
+</tbody>
+</table>
+<p>⇒ Adapter 必须实现：<code>pause(peer) → restore → resume(peer)</code>，并在 UI 上把这一步说清（"恢复会覆盖对端当前版本"）。
+3. <code>POST /rest/folder/versions</code> <strong>只按原相对路径恢复</strong>，没有"另存为新文件名"参数（PRD §FR-3.6 已据此收敛）。
+   返回体是"每个文件一条错误信息"的字典，<strong>空字典 = 全部成功</strong>——必须检查它，不能只看 HTTP 200。</p>
+<h2 id="7-7">7. 职责 7：进程与健康</h2>
+<table>
+<thead>
+<tr>
+<th>目的</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动</td>
+<td><code>syncthing serve --home &lt;dir&gt; --no-browser --no-upgrade --gui-address &lt;addr&gt; --gui-apikey &lt;key&gt;</code></td>
+</tr>
+<tr>
+<td>就绪探测</td>
+<td>轮询 <code>GET /rest/system/ping</code>（不要用端口探测）</td>
+</tr>
+<tr>
+<td>健康快照</td>
+<td><code>GET /rest/system/version</code> + <code>GET /rest/system/status</code> + <code>restart-required</code></td>
+</tr>
+<tr>
+<td>日志</td>
+<td><code>GET /rest/system/log.txt?since=</code></td>
+</tr>
+<tr>
+<td>文件夹级错误</td>
+<td><code>GET /rest/folder/errors?folder=</code></td>
+</tr>
+<tr>
+<td>关闭</td>
+<td><code>POST /rest/system/shutdown</code>（或用进程信号）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong>：Windows 上进程形态是 <strong>Service</strong>（PRD §6.9 P0）；Adapter 只负责"健康检查 + 必要时重启 + 上报状态"，
+不把引擎塞进托盘进程里（托盘只做前端展示，不持有文件句柄）。</p>
+<hr />
+<h2 id="8">8. 本约定依赖的"上游事实"清单（都有出处，改动上游前先看这张表）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>事实</th>
+<th>出处</th>
+<th>对 Adapter 的影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F1</td>
+<td><code>versioning.params</code> 值必须是字符串</td>
+<td>源码 + 实测 400 报错</td>
+<td>生成配置时的类型</td>
+</tr>
+<tr>
+<td>F2</td>
+<td>恢复会被对端覆盖，除非先暂停对端</td>
+<td>实测</td>
+<td>恢复流程必须三步</td>
+</tr>
+<tr>
+<td>F3</td>
+<td><code>relaysEnabled=false</code> 时，<code>relay://</code> listen 地址<strong>不生效</strong></td>
+<td>实测（置 true 后 relay 监听才起来）</td>
+<td>E4-B 与私有部署必须置 true</td>
+</tr>
+<tr>
+<td>F4</td>
+<td>已建立的连接不会因地址变更而中断，需重启</td>
+<td>实测</td>
+<td>切换网络路径的流程</td>
+</tr>
+<tr>
+<td>F5</td>
+<td><code>bytesProxied ≈ 转发的单向字节量</code>（实测 8 MiB 文件 → 8.02 MiB，1.00×）</td>
+<td>实测</td>
+<td>成本 ≈ bytesProxied × 单价，<strong>不要除以 2</strong></td>
+</tr>
+<tr>
+<td>F6</td>
+<td><code>fsWatcherDelayS</code> 默认 10、可经 REST 调到 1（源码下限 0.01）</td>
+<td>源码 + 实测</td>
+<td>E5 时延调优</td>
+</tr>
+<tr>
+<td>F7</td>
+<td>连接 <code>type</code> 六种取值与 <code>kind</code> 映射</td>
+<td>官方 REST 文档</td>
+<td>状态灯</td>
+</tr>
+<tr>
+<td>F8</td>
+<td><code>/rest/folder/versions</code> 无"另存"参数</td>
+<td>官方文档 + 实测</td>
+<td>恢复交互只做"恢复/取消"</td>
+</tr>
+<tr>
+<td>F9</td>
+<td>忽略规则走 <code>/rest/db/ignores</code>，被忽略的文件确实不同步</td>
+<td>实测</td>
+<td>UI 不暴露 <code>.stignore</code></td>
+</tr>
+<tr>
+<td>F10</td>
+<td>relay 的 <code>ID:</code> 只在 <code>-debug</code> 下打印；<strong>URI 默认就会打印</strong></td>
+<td>源码（<code>main.go:192</code> 在 <code>if debug</code> 内；<code>:270</code> 无条件）</td>
+<td>M0.5 手册 §3.3 的取 ID 步骤</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 验证方式（可复跑）</h2>
+<pre><code class="language-bash">cd /data/lan-sync/adapter
+python3 lab.py up &amp;&amp; python3 lab.py checks      # 9 项契约检查（含版本恢复三步流程）
+python3 exp_restore.py                          # 恢复语义对照实验
+python3 net_lab.py up &amp;&amp; python3 net_lab.py relay   # 自建 disco + 私有 relay + token
+python3 net_lab.py bad-token                    # 负例：错误 token 必须连不上
+python3 net_lab.py status / down
+</code></pre>
+<p>产物：<code>local-lab/REPORT.md</code>（检查结果表）、<code>local-lab/results.json</code>、<code>local-lab/exp-restore.json</code>。</p>
+<h2 id="10">10. 仍未验证 / 待你机器就位的部分</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>为什么本机测不了</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows 文件监听行为（Office 锁文件、USR Journal、长路径）</td>
+<td>需要真 Windows</td>
+</tr>
+<tr>
+<td>真实跨网 relay（NAT 打洞、公网中继）</td>
+<td>本机是同机回环，只验证了"relay 路径可用"</td>
+</tr>
+<tr>
+<td>E2 的 ECS 并发-内存曲线与公网带宽上限</td>
+<td>需要云主机</td>
+</tr>
+<tr>
+<td>E5 的真实 P50/P95（本机预演：p50 ≈ 10s，正好等于默认 <code>fsWatcherDelayS=10</code>）</td>
+<td>需要真机 + 真实网络</td>
+</tr>
+<tr>
+<td>E6 网络切换</td>
+<td>需要真实网络切换场景</td>
+</tr>
+<tr>
+<td>relay 的按设备准入/计量（W1/W2）</td>
+<td>上游本就没有，属改造工作项</td>
+</tr>
+</tbody>
+</table></main><footer>G1 · Syncthing Adapter 接口约定 v1 · 生成于 2026-09-13</footer></div></body></html>

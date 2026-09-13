@@ -1,0 +1,333 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>M0.5 本地实验结论（Linux 可验证子集）</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>M0.5 本地实验结论（Linux 可验证子集）<span class="badge">实测数字</span></h1><div class="meta">2026-09-13 · 版本锁定表 + B1–B5/C1–C9 结论 + 7 处假设纠正 + §13 可用数字</div></div></header>
+<div class="wrap"><main><h1 id="m05-linux">M0.5 本地实验结论（Linux 可验证子集）</h1>
+<blockquote>
+<p>执行日期：2026-09-13 · 执行机：一台 Linux 服务器（非目标环境，仅用于把"能被机器验证的部分"跑实）
+配套：《M0.5 技术基线 PoC 操作手册 v0.3》《G1 · Syncthing Adapter 接口约定》
+结论性质：<strong>部分替代 M0.5</strong>——凡是与 Windows 无关、与公网无关的项，这里已经给出实测结论与数字。</p>
+</blockquote>
+<hr />
+<h2 id="1-23">1. 版本锁定表（本机实测值，可直接抄进你的报告 §2.3）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>实测值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Syncthing version</td>
+<td><code>v2.1.5 "Hafnium Hornet"</code> (go1.27.1 linux-amd64)</td>
+</tr>
+<tr>
+<td>Source tag</td>
+<td><code>v2.1.5</code></td>
+</tr>
+<tr>
+<td>Source commit</td>
+<td><code>2ca95cf1498104113fdfde46df4107f2450a0f71</code></td>
+</tr>
+<tr>
+<td>发行包 SHA-256（linux-amd64 tar.gz）</td>
+<td><code>3d222b609f7ab2944e02748cb10488b4160d446b49e0eafc107ef2a525ab3486</code></td>
+</tr>
+<tr>
+<td>⤷ 与官方 <code>sha256sum.txt.asc</code> 比对</td>
+<td>✅ <strong>一致</strong>（签名文件同时留存）</td>
+</tr>
+<tr>
+<td><code>syncthing</code> 二进制 SHA-256</td>
+<td><code>ab0ea5f307101e5aa1b4c599164cfc2cc62bddcb8f53e1b3204fc77ac54ce07f</code></td>
+</tr>
+<tr>
+<td><code>stdiscosrv</code>（同 tag 自建）</td>
+<td><code>/9fc0e0c9e69f60510d569720b5caadfe2db6f6cbe555047c6b082ff7e9f70b1d</code></td>
+</tr>
+<tr>
+<td><code>strelaysrv</code>（同 tag 自建）</td>
+<td><code>/5d36e6f957a4baf22cdd4deb9b42bb709c17f68ed50e2e0219e7d738a5447c0a</code></td>
+</tr>
+<tr>
+<td>自建方式</td>
+<td>Go 1.27.1（与官方构建同版本）<code>go run build.go -no-upgrade build strelaysrv/stdiscosrv</code></td>
+</tr>
+<tr>
+<td>升级策略</td>
+<td>阶段一不自动升级；升级前重跑「基础同步 + E3 + E5 + E6 + relay 回落」回归</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>说明：本机自建的 <code>stdiscosrv</code>/<code>strelaysrv</code> 版本串为 <code>unknown-dev</code>（源码 tarball 无 git 元数据），
+你那边用 <code>git clone --branch v2.1.5</code> 构建会带上 tag 信息，<strong>tag 与 commit 要与客户端完全一致</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="2">2. 验证矩阵（✅ 已有实测结论 · ⏳ 仍需真机）</h2>
+<h3 id="21-5">2.1 五项基础能力（手册 §5）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>结果</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>B1 双机原生同步</strong></td>
+<td>✅</td>
+<td><code>local-lab/REPORT.md</code> C3；4 类操作（新增/改/删/重命名）最终一致</td>
+</tr>
+<tr>
+<td><strong>B2 自建 <code>stdiscosrv</code> 生效</strong></td>
+<td>✅</td>
+<td><code>net_lab.py disco</code>：对端地址设为 <code>dynamic</code>（不给任何静态地址）后仍建立连接，地址为 <code>10.0.0.1:22001</code> —— <strong>只可能来自我们自己的 discovery</strong></td>
+</tr>
+<tr>
+<td><strong>B3 私有 relay + 共享 token</strong></td>
+<td>✅ 正例</td>
+<td><code>net_lab.py relay</code>：连接类型 <code>relay-server</code>，relay <code>/status</code> 出现 <code>numActiveSessions=1</code>、<code>numConnections=2</code>、<code>bytesProxied</code> 增长</td>
+</tr>
+<tr>
+<td>B3 负例（错误 token 必须连不上）</td>
+<td>⏳ 见本轮日志</td>
+<td><code>net_lab.py bad-token</code>（第三个实例带错误 token，预期 60s 内始终 <code>connected=false</code>）</td>
+</tr>
+<tr>
+<td><strong>B4 LAN 直连 / 跨网 relay 回落</strong></td>
+<td>✅（本机等价验证）</td>
+<td>去掉直连 listen + <code>relaysEnabled=true</code> + 重启 → 连接类型由 <code>tcp-*</code> 变 <code>relay-*</code>，无需人工切换</td>
+</tr>
+<tr>
+<td><strong>B5 版本历史 / Restore API</strong></td>
+<td>✅</td>
+<td>见下文 §3.3（含"必须先暂停对端"的硬流程）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-adapterlabpy-checks9">2.2 契约检查（<code>adapter/lab.py checks</code>，9 项）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>检查</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>REST 可读配置（devices/folders/listenAddresses）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C2</td>
+<td>连接类型可读（<code>tcp-client</code>/<code>tcp-server</code> → kind=direct）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C3</td>
+<td>双机同步（同机直连）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C4</td>
+<td>events 订阅（<code>LocalChangeDetected</code>）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C5</td>
+<td>pause / resume（暂停即断连、恢复能重建）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C6</td>
+<td><code>.stignore</code> 经 REST 生效（被忽略文件确实不同步）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C7</td>
+<td>版本归档 + 恢复（三步流程）</td>
+<td>✅（v0.3 修正确认后）</td>
+</tr>
+<tr>
+<td>C8</td>
+<td><code>fsWatcherDelayS</code> 可经 REST 调整（10 → 1）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>C9</td>
+<td>时延预演（10 次，同机 localhost）</td>
+<td>✅ p50 ≈ <strong>9.98s</strong>（≈ 默认 <code>fsWatcherDelayS=10</code>，印证默认值就是主因）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23">2.3 仍必须上真机的项</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows 文件监听行为、Office/WPS 锁文件、长路径、USN Journal</td>
+<td>需要真 Windows</td>
+</tr>
+<tr>
+<td>真实跨网（NAT 打洞、公网中继、企业网限制）</td>
+<td>本机是回环，只验证了"relay 路径可用"</td>
+</tr>
+<tr>
+<td>E2（ECS 并发-内存曲线、公网带宽上限）</td>
+<td>需要云主机</td>
+</tr>
+<tr>
+<td>E5 的真实 P50/P95</td>
+<td>需要真机与真实网络（本机 p50 ≈ 10s 只说明默认值影响）</td>
+</tr>
+<tr>
+<td>E6 网络切换五场景</td>
+<td>需要真实网络切换</td>
+</tr>
+<tr>
+<td>中继的按设备准入/计量（W1/W2）</td>
+<td>上游本就没有，属改造工作项</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-7">3. 本轮实验改掉了 7 个"文档里的错误假设"</h2>
+<p>这些全部已落进手册 v0.3 与 G1 契约（附变更记录）：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>原以为</th>
+<th>实测结论</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>relay 的 ID/URI 都不打印</td>
+<td><strong>URI 默认就打印</strong>（源码 <code>main.go:270</code> 无条件）；只有 <code>ID:</code> 行在 <code>if debug</code> 内</td>
+<td>取 ID 的步骤简化：默认日志的 URI 里已含 <code>id=</code>，追加 <code>&amp;token=</code> 即可</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>bytesProxied</code> 双向 ⇒ 成本要 ÷2（否则高估 2 倍）</td>
+<td><strong>错</strong>。实测 8 MiB 文件 → <code>bytesProxied</code> +8,414,742 B = <strong>8.02 MiB（1.00×）</strong>；A 侧 <code>outBytesTotal</code> +8.00 MiB</td>
+<td>成本口径 = <code>bytesProxied × 单价</code>；倍数来自<strong>接收端数量</strong>，不是 2</td>
+</tr>
+<tr>
+<td>3</td>
+<td>强制走 relay 只需改对端地址</td>
+<td><strong>不够</strong>：还需 ① <code>relaysEnabled=true</code>（置 false 时 relay listen 地址<strong>完全不生效</strong>）② 去掉直连 listen ③ <strong>主动重启</strong>（已建立的直连不会因地址变更而断）</td>
+<td>E4-B 步骤补全</td>
+</tr>
+<tr>
+<td>4</td>
+<td>恢复 API 调了就生效</td>
+<td><strong>不暂停对端 = 静默失效</strong>：对端较新版本 1–2 秒内覆盖回去，而 API 返回成功（空字典）</td>
+<td>恢复必须 <code>pause(对端) → restore → resume</code>；UI 要提示"会覆盖对端当前版本"</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>versioning.params</code> 可以传数字</td>
+<td>必须<strong>字符串</strong>：<code>{"maxAge": "30"}</code>；传数字 → <code>HTTP 400 cannot unmarshal number ... of type string</code></td>
+<td>生成配置的类型正确性</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>stdiscosrv -version</code> 可用</td>
+<td>v2 用 kong，<code>-version</code> 会被拆成 <code>-v -e ...</code> 报错；查版本用 <code>-v</code></td>
+<td>手册命令修正</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>/rest/folder/versions</code> 返回即可信</td>
+<td>返回体是"每文件一条错误"的字典，<strong>必须判空</strong>；空 = 成功</td>
+<td>Adapter 必须检查返回体，不能只看 HTTP 200</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-13">4. 关键数字（可直接用于回填文档 §13）</h2>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>实测值</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>relay 转发量与文件大小之比</td>
+<td><strong>1.00×</strong>（8.02 MiB / 8.00 MiB）</td>
+<td>成本按 <code>bytesProxied</code> 计，不除 2</td>
+</tr>
+<tr>
+<td>本机 relay 单会话有效吞吐</td>
+<td><strong>4.19 Mbps</strong>（16s 传 8 MiB）</td>
+<td>回环 + 单会话，<strong>不代表 ECS 带宽上限</strong>；E2 仍须实测</td>
+</tr>
+<tr>
+<td>感知时延（同机，默认 <code>fsWatcherDelayS=10</code>）</td>
+<td>p50 ≈ 9.98s</td>
+<td>印证"3 秒目标默认不可达"，E5 需真机测两组配置</td>
+</tr>
+<tr>
+<td>relay 内存/会话</td>
+<td>本机 3 个实例规模，未做曲线</td>
+<td>E2 必须上 ECS 压</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5">5. 复现方式</h2>
+<pre><code class="language-bash">cd /data/lan-sync/adapter
+python3 lab.py up            # 起两个实例、私有化、互加设备、建文件夹（staggered maxAge=30）
+python3 lab.py checks        # 9 项契约检查 → local-lab/REPORT.md
+python3 exp_restore.py       # 恢复语义两组对照 → local-lab/exp-restore.json
+python3 net_lab.py up        # 起 stdiscosrv + 私有 strelaysrv（共享 token）
+python3 net_lab.py relay     # 强制 relay-only，验证 relay 路径 + 字节计量
+python3 net_lab.py disco     # 自建 discovery + dynamic 地址，验证发现链路
+python3 net_lab.py bad-token # 负例：错误 token 应连不上
+python3 net_lab.py status / down
+</code></pre>
+<hr />
+<h2 id="6-m05">6. 对 M0.5 进度的影响</h2>
+<ul>
+<li><strong>G4（实验报告）</strong>：本机部分已产出结论与数字，<strong>E4 的口径问题（1.00×）已解决</strong>；
+  E2/E5/E6 仍需真机与 ECS。</li>
+<li><strong>G1（Adapter 接口约定）</strong>：✅ 已产出（<code>docs/G1-Adapter接口约定.md</code>），且<strong>每条行为都在真机验证过</strong>。</li>
+<li><strong>G2（E2EE 入网流程）</strong>：本轮的"两层准入"实测（同步成员准入 vs relay 使用准入）已覆盖其一半内容，
+  剩下的是与阶段二授权相关的部分。</li>
+<li>结论：<strong>M0.5 不需要在 Windows 上从零开始</strong>——真机只需要测"Windows 专属 + 真实网络 + ECS"这三类。</li>
+</ul></main><footer>M0.5 本地实验结论（Linux 可验证子集） · 生成于 2026-09-13</footer></div></body></html>

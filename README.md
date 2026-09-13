@@ -13,7 +13,9 @@
 | 文件 | 内容 |
 |---|---|
 | [`docs/局域网同步系统-产品文档-v0.9.md`](docs/局域网同步系统-产品文档-v0.9.md) | 产品需求文档（rc）：场景 / 功能需求 / 架构 / 成本模型 / 里程碑 / 风险 / 验收标准，附录含开源生态调研、评审往复、同步数据表现、内部数据说明、ADR |
-| [`docs/M0.5-技术基线PoC操作手册-v0.2.md`](docs/M0.5-技术基线PoC操作手册-v0.2.md) | 照单可跑的基线验证手册：五项基础能力 + 六个实验 + 版本锁定表 + 冻结 Gate |
+| [`docs/M0.5-技术基线PoC操作手册-v0.3.md`](docs/M0.5-技术基线PoC操作手册-v0.3.md) | 照单可跑的基线验证手册：五项基础能力 + 六个实验 + 版本锁定表 + 冻结 Gate（v0.3 已按真机实验校准） |
+| [`docs/G1-Adapter接口约定.md`](docs/G1-Adapter接口约定.md) | **Adapter 接口契约**：7 条职责、每条 REST 调用、8 条上游事实、10 条实测注意点 |
+| [`docs/M0.5-本地实验结论（Linux子集）.md`](docs/M0.5-本地实验结论（Linux子集）.md) | 本地实验结论：版本锁定表、B1–B5/C1–C9 结果、7 处假设纠正、成本口径实测数字 |
 
 ## 技术路线（一句话）
 
@@ -30,6 +32,22 @@ Syncthing Headless / Windows Service（原生引擎）
       ├─ 局域网：原生 Local Discovery + TCP/QUIC 直连
       ├─ 跨网：自建 stdiscosrv（发现）
       └─ 直连失败：自建私有 strelaysrv（TCP，可映射 443，共享 -token）
+```
+
+## 参考实现与验证 harness `adapter/`
+
+| 文件 | 内容 |
+|---|---|
+| `syncthing_adapter.py` | **契约的参考实现**（Python）：配置读写 / 设备与文件夹 / events / 连接类型 / pause-resume / 版本恢复 / 健康检查 |
+| `lab.py` | 本地实验台：同机起两个 Syncthing 实例并跑 9 项契约检查（含版本恢复三步流程） |
+| `net_lab.py` | 网络实验：自建 `stdiscosrv` + 私有 `strelaysrv`（共享 token），验证发现链路、强制 relay、错误 token 负例 |
+| `exp_restore.py` | 恢复语义对照实验（"不暂停对端 = 被覆盖"的实测证据） |
+
+```bash
+cd adapter
+python3 lab.py up && python3 lab.py checks      # 9 项契约检查
+python3 net_lab.py up && python3 net_lab.py relay   # 私有 relay + token
+python3 exp_restore.py                          # 恢复语义对照
 ```
 
 ## 工具包 `m05-toolkit/`
@@ -60,6 +78,9 @@ python3 m05-toolkit/tools/gen_report.py --out M05-报告.md
 | 文件版本（versioning）**默认关闭**，且只归档「远端变更导致本地被替换/删除」 | 恢复能力按设备、按 Folder 计算 |
 | `fsWatcherDelayS` 默认 **10 秒**；`reconnectionIntervalS` 默认 **20 秒**（下限 5） | 直接影响感知时延与切换 SLA |
 | relay 转发载荷**完全不透明**（relay 协议文档全文无 "folder" 一词） | 中继看不到内容、文件名、folder ID、块哈希 |
+| **`bytesProxied` ≈ 转发的单向字节量**（实测 8 MiB 文件 → 8.02 MiB，1.00×） | 成本 = `bytesProxied` × 单价；倍数来自**接收端数量**，不是 2 |
+| **恢复必须先暂停对端**，否则对端较新版本会静默覆盖回去（API 仍返回成功） | 恢复流程 = `pause(peer) → restore → resume` |
+| `relaysEnabled=false` 时 `relay://` listen 地址**不生效**；已建立的连接不会因地址变更而断 | 切换网络路径要"改 listen + 重启" |
 
 ## 许可
 
