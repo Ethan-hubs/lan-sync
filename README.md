@@ -5,8 +5,8 @@
 同一网段内设备点对点直连、跑满内网带宽；不在同一网段时自动经**自己部署的** Syncthing 中继
 （`strelaysrv`）加密中转；全程端到端加密，中继只转发密文。
 
-> 本仓库是**设计与工具仓库**：产品需求文档 + M0.5 技术基线验证手册 + 配套测量/部署工具包。
-> 不含产品实现代码（托盘 UI / 适配层）——那些在 M0.5 验证通过、技术基线冻结之后才开始写。
+> 本仓库包含产品文档、M0.5 技术基线工具，以及迭代 1 的 C# Adapter 实现与测试。
+> 托盘 UI 尚未实现。
 
 ## 文档
 
@@ -37,6 +37,39 @@ Syncthing Headless / Windows Service（原生引擎）
       ├─ 跨网：自建 stdiscosrv（发现）
       └─ 直连失败：自建私有 strelaysrv（TCP，可映射 443，共享 -token）
 ```
+
+## 构建环境约定（C#）
+
+- 必须使用 **.NET SDK 10.0.401**；仓库根目录的 `global.json` 固定该版本，并允许同一特性带内的最新补丁版本。进入仓库后，`dotnet --version` 应解析为兼容的 `10.0.4xx` SDK。PATH 中只有 8.0.301 时会报 `A compatible .NET SDK was not found`。
+- 推荐在实现机和 CI 上安装机器级 .NET 10 SDK 并加入 PATH。当前 Windows 实现机实际使用的是用户级 `C:\Users\brl20\AppData\Local\Microsoft\dotnet10\dotnet.exe`（10.0.401）；该绝对路径只是实现机现状，不是仓库的可移植配置。
+- `LanSync.Core`、`LanSync.Syncthing` 和两个测试工程目标框架均为跨平台 `net10.0`。将来的 Windows API 调用应收敛在托盘工程；若库必须调用 Windows API，则为相应库增加 `net10.0-windows` 目标并恢复 CA1416 平台守护。
+
+```powershell
+# Windows：机器级 SDK 已进入 PATH
+dotnet restore LanSync.sln
+dotnet test LanSync.sln --no-restore
+dotnet format LanSync.sln --no-restore --verify-no-changes
+
+# 当前实现机的用户级 SDK（PATH 尚未配置 .NET 10）
+$DotNet10 = 'C:\Users\brl20\AppData\Local\Microsoft\dotnet10\dotnet.exe'
+& $DotNet10 test LanSync.sln
+```
+
+集成测试运行模式：
+
+- 外部实例：同时设置 `LANSW_TEST_A_GUI`、`LANSW_TEST_A_APIKEY`、`LANSW_TEST_B_GUI`、`LANSW_TEST_B_APIKEY`。
+- 自建实例：设置 `LANSW_SYNCTHING_BIN`。v2.1.5 官方 Windows/Linux 二进制使用内置 SHA-256；其他平台或自定义发行包可用 `LANSW_SYNCTHING_SHA256` 提供 64 位十六进制期望值。
+- 无实例：上述变量均未设置时，C1–C6 必须 skip，不得 fail。为避免 shell 遗留变量造成误判，Linux 上可显式清空后运行：
+
+```bash
+env -u LANSW_SYNCTHING_BIN \
+    -u LANSW_SYNCTHING_SHA256 \
+    -u LANSW_TEST_A_GUI -u LANSW_TEST_A_APIKEY \
+    -u LANSW_TEST_B_GUI -u LANSW_TEST_B_APIKEY \
+    dotnet test tests/LanSync.IntegrationTests/LanSync.IntegrationTests.csproj
+```
+
+预期结果：外部实例和自建实例模式为 **8/8**；无实例模式为 **2 passed / 6 skipped**。
 
 ## 参考实现与验证 harness `adapter/`
 
