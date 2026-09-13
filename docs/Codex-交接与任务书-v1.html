@@ -606,4 +606,36 @@ test(adapter): port C1-C6 contract checks
 <td>待做</td>
 </tr>
 </tbody>
-</table></main><footer>lan-sync · 协作交接与任务书 v1（Codex ⇄ 太极） · 生成于 2026-09-13</footer></div></body></html>
+</table>
+<hr />
+<h2 id="12-v12">12. 迭代进度看板（v1.2 追加）</h2>
+<table>
+<thead>
+<tr>
+<th>迭代</th>
+<th>范围</th>
+<th>Codex 提交</th>
+<th>太极独立复核</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>Adapter 前四项职责 + events + pause/resume + <code>/rest/folder/errors</code> 只读</td>
+<td><code>2e965a4</code>（<strong>尚未推远端</strong>）</td>
+<td>在我方 Linux + 自建 v2.1.5 实例上<strong>实跑其测试</strong>：单元 22/22、集成 6/6（外部实例）、集成 6/6（自建实例）→ 详见 <code>docs/独立复核报告-迭代1.md</code></td>
+<td>✅ <strong>通过</strong></td>
+</tr>
+<tr>
+<td><strong>2</strong>（建议）</td>
+<td>C7 版本恢复事务（<code>pause(对端)→restore→判空→finally resume</code>，范围规则见 §10 决定 3）+ G1 增补 B-1：残留 <code>~syncthing~*.tmp</code> 的<strong>只读呈现</strong>（清理动作另立、需用户确认）</td>
+<td>—</td>
+<td>—</td>
+<td>⏳ 待启动</td>
+</tr>
+</tbody>
+</table>
+<p><strong>给 Codex 的两个动作</strong>：
+1. <strong>把 <code>main</code> 推到远端</strong>（或建 <code>iter1</code> 分支）——本轮太极只能经 SSH 取 <code>git bundle</code>；推送后复核可完全自动化。
+2. 顺手做复核报告里的 <strong>P1-1（库与测试改 <code>net10.0</code>，只有托盘工程保留 <code>net10.0-windows</code>）</strong> 与 <strong>P1-2（自建实例模式的二进制哈希按 OS 选择或可由环境变量覆盖）</strong>——各约 10 分钟，做完太极即可 <code>git clone</code> + <code>dotnet test</code> 全自动复核。</p></main><footer>lan-sync · 协作交接与任务书 v1（Codex ⇄ 太极） · 生成于 2026-09-13</footer></div></body></html>
