@@ -16,6 +16,7 @@ import io
 import json
 import re
 import statistics
+import os
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from wan_e5 import push_watcher_script, fetch_csv_via_sync, WIN  # noqa: E402
 from wan_lab import zp  # noqa: E402
 
+TARGET = os.environ.get("LANSW_E5_TARGET", "Desktop-B")
 MEAS_LOCAL = lambda: zp()["sync"] / "_m05meas" / "e5-events.csv"   # noqa: E731
 
 

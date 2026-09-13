@@ -337,4 +337,81 @@ folder 配置已正确清理，但 <code>AddDeviceAsync</code> 加的设备条�
 <p>与我方复核的关系：<strong>不影响结论</strong>——我在自己机器上用 10.0.401 零改动跑通了全部四种模式；此处只是提醒"实现机的默认环境还不具备可复现性"。</p>
 </blockquote>
 <h3 id="62-p2">6.2 一条 P2（架构权衡，非缺陷）</h3>
-<p>四个工程改成 <code>net10.0</code> 后，Windows 平台分析器（CA1416 / <code>SupportedOSPlatformVersion</code>）不再作用于库 —— 将来若库要直接调用 Windows API（例如在库层做 DPAPI 保护 API key），编译期就不会再给出"该 API 在 Win10 1809 不可用"这类警告。建议：<strong>保持库平台中立</strong>，把平台相关调用收在托盘工程（保留 <code>net10.0-windows</code> + <code>10.0.17763.0</code>）；若确实需要在库里调用，再给该库加 <code>net10.0-windows</code> 作为第二目标框架。</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
+<p>四个工程改成 <code>net10.0</code> 后，Windows 平台分析器（CA1416 / <code>SupportedOSPlatformVersion</code>）不再作用于库 —— 将来若库要直接调用 Windows API（例如在库层做 DPAPI 保护 API key），编译期就不会再给出"该 API 在 Win10 1809 不可用"这类警告。建议：<strong>保持库平台中立</strong>，把平台相关调用收在托盘工程（保留 <code>net10.0-windows</code> + <code>10.0.17763.0</code>）；若确实需要在库里调用，再给该库加 <code>net10.0-windows</code> 作为第二目标框架。</p>
+<hr />
+<h2 id="7-de82600">7. 发布事故：<code>de82600</code> 误删实现方代码（太极责任，已修复并加守卫）</h2>
+<p><strong>事故</strong>：太极的 <code>de82600</code>（提交说明只写"文档更新"）实际删除了实现方推上来的
+<code>src/</code>、<code>tests/</code>、<code>LanSync.sln</code>、<code>global.json</code>、<code>Directory.Build.props</code> 以及 <code>.gitignore</code> 里的构建规则——
+<strong>41 个文件 / 1816 行</strong>。Codex 发现后用 <code>ac6bccb</code> 从已复核过的 <code>4a812fc</code> 精确恢复。</p>
+<p><strong>根因（我这边）</strong>：<code>scripts/build_public.py</code> 在重建发布暂存区时<strong>清空整个目录（只留 <code>.git</code>）</strong>，
+然后只写回自己清单里的文件。这个假设在"公开仓库只有文档与工具包"时成立，
+但实现方开始把 C# 代码推进同一个仓库后就不成立了——<strong>脚本把不属于自己的文件当成垃圾清掉了</strong>。</p>
+<p><strong>修复（<code>4645200</code>）</strong>：
+1. 暂存清理<strong>只清空本脚本托管的三个目录</strong>（<code>docs/</code>、<code>adapter/</code>、<code>m05-toolkit/</code>），其余路径一律不删不改；
+2. README 改为<strong>标记块合并</strong>（<code>&lt;!-- BEGIN:太极生成区 --&gt;</code> … <code>&lt;!-- END:太极生成区 --&gt;</code>），
+   实现方写的段落完整保留；README 仍会整体过一遍脱敏替换（用户名/主机名/私有域名/IP）；
+3. <code>LICENSE</code>、<code>.gitignore</code> <strong>只在缺失时创建</strong>，绝不覆盖（实现方的 <code>bin/ obj/ TestResults/ .vs/</code> 规则因此保住）；
+4. 新增<strong>删除守卫</strong>：发布前检查相对 <code>HEAD</code> 的删除项，<strong>凡涉及非托管路径立即中止</strong>（退出码 2），宁可失败也不误删。</p>
+<p><strong>验证（都在远端复跑过，不是看日志）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>检查</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>git diff 4a812fc ac6bccb -- src tests LanSync.sln global.json Directory.Build.props</code></td>
+<td><strong>空</strong> —— 恢复逐字一致</td>
+</tr>
+<tr>
+<td><code>git clone</code> 远端后 <code>src/ tests/</code> 与根构建文件同 <code>4a812fc</code> 比对</td>
+<td>✅ 完全一致</td>
+</tr>
+<tr>
+<td><code>.gitignore</code> 含 <code>bin/ obj/ TestResults/</code></td>
+<td>✅ 实现方规则未被覆盖</td>
+</tr>
+<tr>
+<td>README 含双方内容且不重复（<code>## 文档</code>×1、<code>## 构建环境约定（C#）</code>×1）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>修复后重跑发布脚本</td>
+<td>✅ 删除守卫通过、隐私扫描 0 命中、仅 <code>README.md</code> 与 <code>adapter/</code> 内文件变更</td>
+</tr>
+<tr>
+<td>从恢复后的远端 <code>git clone</code> 零改动跑测试</td>
+<td>✅ 单元 <strong>22/22</strong>、集成 <strong>8/8</strong>（真实 v2.1.5 实例）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>后续发布流程固定为：<strong>先 <code>git -C public-repo pull --rebase</code> → 再跑 <code>build_public.py</code></strong>（已写进脚本头部说明）。
+这条事故与修复也说明：<strong>跨执行方共用仓库时，"发布脚本的清理范围"必须显式等于"脚本的所有权范围"</strong>。</p>
+</blockquote>
+<h2 id="8-readme-c">8. 复核 README 新写的「构建环境约定（C#）」：路径与现状不符</h2>
+<p>Codex 在 README 记录了 Windows 实现机使用的 SDK 路径：</p>
+<pre><code>C:\Users\<user-a>\AppData\Local\Microsoft\dotnet10\dotnet.exe
+</code></pre>
+<p><strong>我在那台机器上实测：该路径不存在。</strong></p>
+<pre><code>&gt; &quot;C:\Users\<user-a>\AppData\Local\Microsoft\dotnet10\dotnet.exe&quot; --version
+系统找不到指定的路径。
+&gt; dir &quot;C:\Users\<user-a>\AppData\Local\Microsoft\*&quot;      → 无 dotnet10/ 目录
+&gt; dir &quot;C:\Users\Administrator\AppData\Local\Microsoft\dotnet*&quot; /b → 空
+&gt; dir &quot;C:\Users\Administrator\.dotnet&quot; /b                → 无 sdk
+&gt; dir /s /b D:\GPTWork\dotnet.exe  D:\Tools\dotnet.exe  → 空
+&gt; dotnet --version（PATH）→ 8.0.301 [C:\Program Files\dotnet\sdk]
+</code></pre>
+<p>即：<strong>这台机器上目前既找不到 .NET 10 SDK，<code>global.json</code> 又钉着 10.0.401</strong> —— 记录的那条路径无法复现。
+可能原因是该 SDK 曾临时存在（<code>%USERPROFILE%\.dotnet\10.0.401.dotnetFirstUseSentinel</code> 是唯一残留痕迹），
+或在实现方自己的沙箱环境里，事后被清理。</p>
+<p><strong>建议（二选一，都可 10 分钟完成）</strong>：
+1. 在实现机上装一次机器级 SDK 10（<code>winget install Microsoft.DotNet.SDK.10</code>），让 README 的"构建环境约定"变成<strong>任何人照抄就能跑</strong>；
+2. 若确实使用非常规安装位置，请在 README 里写<strong>当前实际存在</strong>的路径，并附一条自检命令（<code>&lt;path&gt;\dotnet.exe --version</code> 应输出 <code>10.0.401</code>）。</p>
+<blockquote>
+<p>与我方复核的关系：<strong>不影响已有结论</strong>——我这边用 10.0.401 零改动跑通了全部模式；
+但"实现机跑不了、记录的路径又不存在"会让后来者无法复现，值得在迭代 2 开工前顺手收掉。</p>
+</blockquote>
+<p>—— 太极，2026-09-14 00:55 CST</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
