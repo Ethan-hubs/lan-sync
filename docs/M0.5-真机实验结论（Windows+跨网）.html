@@ -1,0 +1,304 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>M0.5 真机实验结论（Windows + 真实跨网）</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>M0.5 真机实验结论（Windows + 真实跨网）<span class="badge">真机实测</span></h1><div class="meta">2026-09-13 · 跨网同步跑通 33.8 MB · 感知时延 ≈2–3 秒 · 大小写碰撞 / 长路径 / Service 化四发现</div></div></header>
+<div class="wrap"><main><h1 id="m05-windows">M0.5 真机实验结论（Windows + 真实跨网）</h1>
+<blockquote>
+<p>执行日期：2026-09-13 · 执行环境：<strong>Windows Server 2025 Datacenter</strong>（<code><win-host></code>，8 GB 内存，D: 46.6 GB 可用）
+对端：Azure Linux 服务器（出口 <code><YOUR_LINUX_HOST_IP></code>）→ <strong>两台不同公网 IP 的真实跨网</strong>，不是回环
+配套：《M0.5 技术基线 PoC 操作手册 v0.3》《G1 · Syncthing Adapter 接口约定》《M0.5 本地实验结论（Linux 子集）》
+结论性质：<strong>补上了"Windows 专属"与"真实公网"这两类此前明确标为"必须真机"的缺口</strong></p>
+</blockquote>
+<hr />
+<h2 id="1">1. 拓扑与版本锁定（真机实测值）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Azure 侧实例 Z</td>
+<td>Device ID <code><DEVICE-ID></code>，监听 22003</td>
+</tr>
+<tr>
+<td>WinServer-A 侧实例 W</td>
+<td>Device ID <code><DEVICE-ID></code>，监听 22000，数据在 <code>D:\LanSync\m05</code></td>
+</tr>
+<tr>
+<td>Syncthing</td>
+<td>v2.1.5 "Hafnium Hornet"，Windows 侧 <code>syncthing.exe</code> SHA-256 = <code>36a0f7bc…f50344</code>（与官方发行包解出的二进制<strong>逐位一致</strong>）</td>
+</tr>
+<tr>
+<td>跨网连接</td>
+<td><code>type=tcp-server</code>（真实公网直连，非中继），对端地址 <code><YOUR_LINUX_HOST_IP>:22003</code></td>
+</tr>
+<tr>
+<td>操作系统</td>
+<td>Windows Server 2025 Datacenter，PowerShell <strong>5.1.26100</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-a">2. 结论 A：真实跨网同步可用 ✅</h2>
+<p>从 Azure 写入 WinServer-A 共享目录（经公网，直连未走中继）：</p>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2000 个小文件（<code>many/</code> 两层目录）</td>
+<td>✅ 全部落地（W 端计数一致）</td>
+</tr>
+<tr>
+<td>32 MiB 不可压缩文件</td>
+<td>✅ 完整落地 <code>33554432</code> 字节，字节数一致</td>
+</tr>
+<tr>
+<td>中文文件名 <code>中文测试-报表.xlsx</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Emoji 文件名 <code>项目😀-01.txt</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>含空格与单引号 <code>名前-with space and 'quote'.txt</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>重音字符 <code>dash-ümlaut-ñ.txt</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>批量传输量</td>
+<td>W 侧连接统计 <code>in=33.8 MB</code>，与源端一致</td>
+</tr>
+<tr>
+<td><strong>单文件感知时延（独立轮询法）</strong></td>
+<td><strong>≈ 2–3 秒</strong>（默认 <code>fsWatcherDelayS=10</code>）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>修正一条此前的假设</strong>：我在 PRD §18 里写过"3 秒默认不可达（因为 watcher 默认聚合 10 秒）"。
+真机结果是 <strong>~2–3 秒可达</strong>——<code>fsWatcherDelayS</code> 只影响"本地变更的聚合上报"，
+而新文件在源端被扫到后立即产生索引，对端拉取很快。<strong>"3 秒"应保留为产品目标，不再是"默认不可能"。</strong></p>
+</blockquote>
+<hr />
+<h2 id="3-blinuxwindowssyncthing">3. 结论 B：大小写碰撞（Linux→Windows）——Syncthing 会<strong>识别并拒绝</strong>，但会卡住文件夹</h2>
+<p>在 Azure（大小写敏感）创建仅大小写不同的两个文件：</p>
+<pre><code>CaseTest.txt  → 内容 &quot;lower-name&quot;（10 字节）
+CaseTest.TXT  → 内容 &quot;upper-ext&quot;（9 字节）
+</code></pre>
+<p>Windows（NTFS 大小写不敏感）实测结果：</p>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只有一个文件落地</td>
+<td><code>CaseTest.TXT</code>（size=9，"upper-ext"）</td>
+</tr>
+<tr>
+<td><strong>Syncthing 明确报错，不是静默覆盖</strong> ✅</td>
+<td><code>folder/errors</code>：<code>remote "CaseTest.txt" uses different upper or lowercase characters than local "CaseTest.TXT"; change the casing on either side to match the other</code></td>
+</tr>
+<tr>
+<td>留下残留临时文件</td>
+<td><code>~syncthing~CaseTest.txt.tmp</code>（size=10，"lower-name" 的内容）</td>
+</tr>
+<tr>
+<td><strong>文件夹永远无法进入"完全同步"</strong></td>
+<td><code>needFiles</code> 持续 = 1（<code>state=idle</code> 但队列非空），删掉碰撞文件对后立即恢复 <code>needFiles=0 errors=0</code></td>
+</tr>
+<tr>
+<td>附带发现</td>
+<td>该错误项<strong>会拖慢整个文件夹的同步</strong>：清理前测得的批量时延被推到 ~90 s，清理后恢复正常</td>
+</tr>
+</tbody>
+</table>
+<p><strong>产品含义（要写进 PRD 与 Adapter 契约）</strong>
+1. 好消息：<strong>不会静默丢数据</strong>（此前担心的"互相覆盖"被实测否定）。
+2. 但托盘 UI 必须<strong>把这类 folder error 明确呈现</strong>（红色告警 + "改一边的大小写"的处置建议），否则用户只会看到"永远在同步中"。
+3. Adapter 需要提供"列出 folder 错误 + 一键清理残留 <code>~syncthing~*.tmp</code>"的能力（现已确认 <code>/rest/folder/errors</code> 能拿到精确原因）。</p>
+<hr />
+<h2 id="4-c260-api">4. 结论 C：&gt;260 字符路径——<strong>能同步，但普通 API 看不见</strong>（比预想的更微妙）</h2>
+<p>用例：8 层 × 30 字符目录 + 文件名，<strong>完整路径 281 字符</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>检查</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows <code>LongPathsEnabled</code> 注册表</td>
+<td><strong>0</strong>（默认关闭）</td>
+</tr>
+<tr>
+<td>深目录（最长 267 字符）是否创建</td>
+<td>✅ 创建了</td>
+</tr>
+<tr>
+<td><strong>目标文件是否同步过来</strong></td>
+<td>✅ <strong>同步成功</strong>（Syncthing 内部使用长路径感知 API）</td>
+</tr>
+<tr>
+<td>用 <code>Get-ChildItem -Recurse</code> 能否枚举到该文件</td>
+<td>❌ <strong>看不到</strong>（返回 0 个文件）</td>
+</tr>
+<tr>
+<td>用 <code>\\?\</code> 前缀访问同一路径</td>
+<td>✅ <code>Test-Path</code> = True</td>
+</tr>
+</tbody>
+</table>
+<p><strong>产品含义</strong>：Adapter / 托盘 / 报表在做"扫描文件、展示列表、计算占用"时，
+<strong>必须使用扩展长度路径（<code>\\?\</code>）或启用长路径清单</strong>，否则会出现"文件明明同步了、界面里看不见"的诡异现象。
+PRD §FR-1.6 的表述要从"&gt;260 需 <code>\\?\</code>（引擎侧）"扩展为"<strong>引擎可同步；UI/Adapter 侧也必须用扩展路径访问</strong>"。</p>
+<hr />
+<h2 id="5-d-syncthing-windows-servicesc-create-console">5. 结论 D：把 Syncthing 注册为 Windows Service——<strong><code>sc create</code> 直接包 console 程序会启动失败</strong></h2>
+<table>
+<thead>
+<tr>
+<th>尝试</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sc.exe create LanSyncEngine binPath= "...\syncthing.exe serve --home ... --gui-apikey ..."</code> → <code>Start-Service</code></td>
+<td>❌ <code>CouldNotStartService</code>；服务保持 <code>Stopped</code>（SCM 要求进程以服务协议向 SCM 汇报状态，普通 console 程序满足不了）</td>
+</tr>
+<tr>
+<td>引擎进程本身</td>
+<td>✅ 能跑（监听 22000、GUI 可达、跨网同步正常）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论 + 现成答案</strong>：M1 的"引擎以 Windows Service 运行"必须配一个<strong>服务包装器</strong>。核实了上游生态的现成做法：</p>
+<ul>
+<li><code>Bill-Stewart/SyncthingWindowsSetup</code>（4,280★）——它的安装包内部就用 <strong><code>shawl.exe</code></strong> 作为服务包装器
+  （README 原文：<em>"shawl.exe | Helper program for running Syncthing as a Windows service"</em>），
+  并用 <code>asmt.exe</code> 管理服务账号（含"以服务身份登录"权限、重置账号口令）、<code>ServMan.exe</code> 启停服务。</li>
+<li>所以 M1 的正确做法是 <strong>引入 shawl（或 NSSM/WinSW 同类）注册引擎服务</strong>，并处理两件容易被忽略的事：
+  ① 服务账号（非 SYSTEM 时）需要"作为服务登录"权限；② 同步目录要给该账号 Modify 权限
+  （上游文档给的命令格式：<code>icacls "&lt;dir&gt;" /grant "SyncthingServiceAcct:(OI)(CI)M" /t</code>）。</li>
+</ul>
+<hr />
+<h2 id="6-e">6. 结论 E：测量工具本身的三个坑（都踩过并修好）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>坑</th>
+<th>症状</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E1</td>
+<td><strong>PowerShell 5.1 的 <code>Register-ObjectEvent</code> 处理器不会在主线程阻塞时运行</strong></td>
+<td>用 <code>Start-Sleep -Seconds 110</code> 等窗口 → 事件全部堆到脚本结束时才写盘，记录的"到达时间"是<strong>派发时间</strong>：测出 89–103 s，<strong>真实值 ~3 s</strong></td>
+<td>用 <code>$Event.TimeGenerated</code>（事件生成时刻）记录，并把等待改为 200 ms 短睡循环；本版已同时记录 <code>utc_ms</code> 与 <code>dispatch_ms</code> 作为自证</td>
+</tr>
+<tr>
+<td>E2</td>
+<td>无 BOM 的 UTF-8 <code>.ps1</code> 被 PS 5.1 按 GBK 解析</td>
+<td>中文字面量变乱码 → <code>字符串缺少终止符</code> 整个脚本不执行（连续两次踩到）</td>
+<td>推送脚本时<strong>加 UTF-8 BOM</strong>；关键采集脚本一律写成纯 ASCII</td>
+</tr>
+<tr>
+<td>E3</td>
+<td>经 <code>cmd.exe</code> 的 <code>-EncodedCommand</code> 有 8191 字符上限</td>
+<td>4.5 KB 脚本 → base64 ≈ 12 KB → <code>命令行太长</code>，什么都不执行</td>
+<td><strong>长脚本走 <code>scp</code> + <code>-File</code></strong>，短命令才用 EncodedCommand（自动化脚本已按 2.7 KB 阈值分流）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 未完成 / 仍待验证</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中继路径的真机数据（E4）</td>
+<td>需要在 WinServer-A 上跑私有 <code>strelaysrv</code>（二进制已就位、脚本 <code>w_relay.ps1</code> 已写好），或部署到 ECS；本机侧已验证过 relay 路径可用（Linux 子集报告）</td>
+</tr>
+<tr>
+<td>E2（ECS 并发-内存、公网带宽上限）</td>
+<td>仍须在 ECS 上压测</td>
+</tr>
+<tr>
+<td>E6（五场景网络切换 P50/P95）</td>
+<td>需要人为切换真实网络（拔线/热点/休眠）</td>
+</tr>
+<tr>
+<td>Windows Service 化</td>
+<td>需引入服务包装器（见结论 D）</td>
+</tr>
+<tr>
+<td>Office/WPS 锁文件</td>
+<td><strong>WinServer-A 上未安装 Office/WPS</strong>，该用例需在有 Office 的机器上做（或改用"独占句柄"模拟：以 <code>FileShare.None</code> 打开文件）</td>
+</tr>
+<tr>
+<td>跨网 SSH 稳定性</td>
+<td>WinServer-A 的 26645 端口仍被持续爆破，期间会出现 <code>Exceeded MaxStartups</code>/连接重置；已把 <code>MaxStartups 100:30:200</code>、<code>LoginGraceTime 20</code>、<code>PasswordAuthentication no</code> 落盘。<strong>建议进一步收窄放行来源 IP</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8">8. 复现方式</h2>
+<pre><code class="language-bash"># Azure 侧（与 WinServer-A 实例互连、跨网测量）
+cd /data/lan-sync/adapter
+python3 wan_lab.py up                     # 起 Z（打印 Z_DEVICE_ID）
+python3 wan_lab.py peer &lt;W_DEVICE_ID&gt;     # 加对端，等连接
+python3 wan_lab.py e3 all                 # 生成 Windows 专属用例（中文/emoji/长路径/大小写/32MB/2000文件）
+python3 wan_e5.py 20 t1                   # E5 跨网时延（结果经同步通道回流，不依赖 SSH 稳定性）
+
+# WinServer-A 侧（脚本位于 D:\m05stage\）
+w_setup.ps1     # 部署 + 私有化 + 建文件夹 + 开防火墙
+w_verify.ps1    # E3 用例落地校验（含大小写碰撞、残留 tmp）
+w_deep.ps1      # 深路径 / 长路径开关 / need 队列 / 错误明细
+w_state.ps1     # 文件夹状态一行摘要
+w_e5_run.ps1    # E5 采集器（同会话运行；用 $Event.TimeGenerated）
+w_relay.ps1     # 起/停私有 strelaysrv
+w_engine.ps1    # 引擎注册为 Windows Service（当前 sc create 方式启动失败，见结论 D）
+</code></pre></main><footer>M0.5 真机实验结论（Windows + 真实跨网） · 生成于 2026-09-13</footer></div></body></html>

@@ -16,6 +16,8 @@
 | [`docs/M0.5-技术基线PoC操作手册-v0.3.md`](docs/M0.5-技术基线PoC操作手册-v0.3.md) | 照单可跑的基线验证手册：五项基础能力 + 六个实验 + 版本锁定表 + 冻结 Gate（v0.3 已按真机实验校准） |
 | [`docs/G1-Adapter接口约定.md`](docs/G1-Adapter接口约定.md) | **Adapter 接口契约**：7 条职责、每条 REST 调用、8 条上游事实、10 条实测注意点 |
 | [`docs/M0.5-本地实验结论（Linux子集）.md`](docs/M0.5-本地实验结论（Linux子集）.md) | 本地实验结论：版本锁定表、B1–B5/C1–C9 结果、7 处假设纠正、成本口径实测数字 |
+| [`docs/M0.5-真机实验结论（Windows+跨网）.md`](docs/M0.5-真机实验结论（Windows+跨网）.md) | 真机结论（Windows Server + 两个不同公网 IP 的真实跨网）：跨网同步实测、大小写碰撞、>260 字符路径、Service 化四个发现 |
+| [`docs/Codex-交接与任务书-v1.md`](docs/Codex-交接与任务书-v1.md) | **协作交接件**：现状快照 + 硬事实 + 硬约束 + 可直接粘贴的两段任务指令 + 分工协议 |
 
 ## 技术路线（一句话）
 
@@ -73,14 +75,25 @@ python3 m05-toolkit/tools/gen_report.py --out M05-报告.md
 | 事实 | 影响 |
 |---|---|
 | `strelaysrv` 只有**全局共享 `-token`**，没有按设备白名单/黑名单 | 按设备 ACL 要改中继代码，属独立工作项 |
-| `bytesProxied` 是**双向合计**，而云厂商只对出网计费 | 直接拿它算流量费会**高估约 2 倍** |
-| relay 的 `ID:` 与 URI 打印在 `if debug` / `if natEnabled` 分支内 | 默认日志拿不到，需一次性 `-debug` |
+| relay 的 `ID:` 行只在 `-debug` 时打印（`URI:` 默认就打印） | 取 relay ID 需一次性 `-debug`；客户端 URI 也可从默认日志的 `id=` 读出 |
 | 文件版本（versioning）**默认关闭**，且只归档「远端变更导致本地被替换/删除」 | 恢复能力按设备、按 Folder 计算 |
 | `fsWatcherDelayS` 默认 **10 秒**；`reconnectionIntervalS` 默认 **20 秒**（下限 5） | 直接影响感知时延与切换 SLA |
 | relay 转发载荷**完全不透明**（relay 协议文档全文无 "folder" 一词） | 中继看不到内容、文件名、folder ID、块哈希 |
 | **`bytesProxied` ≈ 转发的单向字节量**（实测 8 MiB 文件 → 8.02 MiB，1.00×） | 成本 = `bytesProxied` × 单价；倍数来自**接收端数量**，不是 2 |
 | **恢复必须先暂停对端**，否则对端较新版本会静默覆盖回去（API 仍返回成功） | 恢复流程 = `pause(peer) → restore → resume` |
 | `relaysEnabled=false` 时 `relay://` listen 地址**不生效**；已建立的连接不会因地址变更而断 | 切换网络路径要"改 listen + 重启" |
+
+## 协作方式
+
+本仓库由两个执行方协作推进，**目录边界即接口**：
+
+| 角色 | 负责 | 目录 |
+|---|---|---|
+| **C# 实现方**（Windows 侧） | Adapter 实现、单元 / 集成测试、托盘 UI、打包 | `src/` `tests/` `packaging/` `deploy/` |
+| **验证与文档方**（Linux 侧） | 服务端（`stdiscosrv` + 私有 `strelaysrv`）、真机跨网验证、Gate 状态与文档、**独立复核实现方的代码** | `docs/` `adapter/` `m05-toolkit/` 根文档 |
+
+- 起步顺序：先按 [`docs/Codex-交接与任务书-v1.md`](docs/Codex-交接与任务书-v1.md) 里的**指令 A 对齐事实**（不写代码），确认后再执行**指令 B（迭代 1）**。
+- 集成测试必须支持**外部注入实例**：`LANSW_TEST_A_GUI` / `LANSW_TEST_A_APIKEY` / `LANSW_TEST_B_GUI` / `LANSW_TEST_B_APIKEY`；未设置时自建临时实例（`LANSW_SYNCTHING_BIN`）；两者都不可用则 skip。这样验证方能在**另一台机器上的真实例**跑同一套测试，形成真正的第三方验证。
 
 ## 许可
 
