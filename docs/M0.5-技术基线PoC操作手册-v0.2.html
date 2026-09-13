@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M0.5 技术基线 PoC 操作手册 v0.2</title>
+<style>
+ :root{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}
+ body{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Segoe UI,Roboto,sans-serif;}
+ .wrap{max-width:1100px;margin:0 auto;padding:0 20px 80px;}
+ header.top{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}
+ header.top .wrap{padding-bottom:0;}
+ header.top h1{margin:0 0 6px;font-size:22px;}
+ header.top .meta{color:#9fb3c8;font-size:13px;}
+ header.top .badge{display:inline-block;background:#7c2d12;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}
+ main{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
+ h1,h2,h3,h4{line-height:1.35;margin:1.7em 0 .6em;}
+ h1{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;margin-top:1.2em;}
+ h2{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}
+ h3{font-size:16.5px;}
+ h4{font-size:15px;color:var(--muted);}
+ a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
+ code{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}
+ pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}
+ pre code{background:none;padding:0;font-size:12.5px;}
+ table{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}
+ th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}
+ th{background:#f0f3f7;font-weight:600;white-space:nowrap;}
+ tr:nth-child(even) td{background:#fafbfc;}
+ blockquote{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}
+ hr{border:0;border-top:1px solid var(--line);margin:2.4em 0;}
+ footer{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}
+</style></head><body>
+<header class="top"><div class="wrap">
+<h1>M0.5 技术基线 PoC 操作手册 v0.2<span class="badge">照单可跑</span></h1>
+<div class="meta">2026-09-13 · 配套《局域网同步系统-产品文档 v0.9 rc》· 关键事实已逐条核对源码/官方文档 · v0.2 修 5 处 + 补 5 项</div>
+</div></header>
+<div class="wrap"><main><h1 id="m05-poc-v02">M0.5 技术基线 PoC 操作手册 v0.2</h1>
+<blockquote>
+<p>配套：《局域网同步系统-产品文档-v0.9（rc）》
+目标：<strong>不写产品 UI、不写授权、不写数据库</strong>，用原生 Syncthing + 自建 <code>stdiscosrv</code> + 私有 <code>strelaysrv</code>，把阶段一技术基线跑实。
+M0.5 结束必须产出：① 五项基础能力结论 ② E2–E6 实测报告 ③ 版本锁定表 ④ §13/§14/§15 回填项 ⑤ v1.0 冻结结论。</p>
+<p><strong>v0.2 相对 v0.1</strong>：5 处技术修正（relay ID 获取、<code>--db-dir</code> 语义、<code>bytesProxied</code> 双向口径、强制 relay 的更干净做法、安全组来源限制）+ 5 项补充（前置检查、停工条件、清理回滚、报告需记录的 ID、脚本瑕疵）。全部改动见 <strong>§16 变更记录</strong>，每处都标了核实依据。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 本轮纪律</h2>
+<ol>
+<li><strong>只做 PoC，不顺手开发产品功能。</strong> 不写托盘、不写 Adapter 正式代码、不做 License、不做后台。</li>
+<li><strong>服务端先不套 Caddy/443。</strong> M0.5 直接让 <code>stdiscosrv</code> 监听 8443、<code>strelaysrv</code> 监听 22067；基线确认后 M2 再决定映射 443。</li>
+<li><strong>关闭 Syncthing 自动升级。</strong> 所有客户端进程都带 <code>--no-upgrade</code>。</li>
+<li><strong>关闭官方 discovery / public relay。</strong> 只允许自建 <code>stdiscosrv</code> 与私有 <code>strelaysrv</code>。</li>
+<li><strong>测试目录必须是专用目录。</strong> 不拿真实工作底稿做破坏性测试。</li>
+<li><strong>所有命令输出都留档。</strong> 统一目录 <code>M05-YYYYMMDD/</code>，每个实验一个子目录。</li>
+</ol>
+<h3 id="05-v02-10">0.5 前置检查（v0.2 新增：开工前 10 分钟做完，避免白跑）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>检查项</th>
+<th>命令 / 做法</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1</td>
+<td>ECS 磁盘余量</td>
+<td><code>df -h /opt</code></td>
+<td><strong>≥ 15 GB 可用</strong>（10 万小文件 + ≥4GB 大文件 + 镜像 + <code>.stversions</code> 会吃几个 G）</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>ECS 内存与 swap</td>
+<td><code>free -m</code></td>
+<td>记录基线；1.6G 机器建议确认有 swap，或接受 relay 被 OOM kill 作为 E2 的观察项</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>Docker 可用</td>
+<td><code>docker version</code> / <code>docker ps</code></td>
+<td>正常</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>端口未被占用</td>
+<td><code>ss -lntp \| grep -E '8443\|22067\|22070'</code></td>
+<td>空</td>
+</tr>
+<tr>
+<td>P5</td>
+<td>Windows 上没有旧实例</td>
+<td><code>Get-Process syncthing -ErrorAction SilentlyContinue</code>；<code>Get-Service *syncthing*</code></td>
+<td>无输出（有则先停掉并改端口，避免两套实例抢同一 DB）</td>
+</tr>
+<tr>
+<td>P6</td>
+<td>四台机器二进制一致的做法</td>
+<td><strong>在一台机器下载官方 ZIP → 解压 → 记录 <code>syncthing.exe</code> 与 ZIP 的 SHA-256 → 把这个 exe 复制到另外三台</strong>（不要各自下载）</td>
+<td>§2.1 的四份 hash 完全一致</td>
+</tr>
+<tr>
+<td>P7</td>
+<td>时钟同步</td>
+<td>四台 Windows 执行 <code>w32tm /resync</code>；ECS <code>date -Is</code></td>
+<td>两两时钟差 &lt; 100 ms（E5/E6 依赖时间戳）</td>
+</tr>
+<tr>
+<td>P8</td>
+<td>测试盘空间</td>
+<td>各端 <code>C:\LanSync</code> 所在盘</td>
+<td>≥ 20 GB 可用</td>
+</tr>
+<tr>
+<td>P9</td>
+<td>出口 IP 记录</td>
+<td>家庭/公司/测试机各自 <code>curl ifconfig.me</code>（或搜"我的IP"）</td>
+<td>写进报告，用于安全组白名单与 E6 场景记录</td>
+</tr>
+</tbody>
+</table>
+<h3 id="06-v02">0.6 停工条件（v0.2 新增：出现这些就停下来上报，不要"接着跑完再说"）</h3>
+<table>
+<thead>
+<tr>
+<th>编号</th>
+<th>触发条件</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>STOP-1</td>
+<td>E3 出现<strong>静默丢文件</strong>（一端文件消失且另一端不知道）</td>
+<td><strong>立即停 M0.5</strong>，保留现场（两端目录 + <code>.stversions</code> + Syncthing 日志），先定位</td>
+</tr>
+<tr>
+<td>STOP-2</td>
+<td>E3 出现<strong>大小写同名互相覆盖</strong>导致内容被替换</td>
+<td>立即停，保留同名文件的两个版本与时间线</td>
+</tr>
+<tr>
+<td>STOP-3</td>
+<td>E2 出现 relay <strong>OOM / 容器被杀</strong>且伴随数据面异常（不是单纯重启）</td>
+<td>记录 <code>free</code>、<code>docker stats</code>、<code>dmesg</code>，降并发重测；若 1 个 session 都撑不住 → 直接触发 D5 重新评估</td>
+</tr>
+<tr>
+<td>STOP-4</td>
+<td>发现客户端<strong>连上了官方 discovery 或公共 relay</strong></td>
+<td>立即停，检查配置（这属于 R11 红线）</td>
+</tr>
+<tr>
+<td>STOP-5</td>
+<td>测试期间误用了真实工作目录</td>
+<td>立即停，先确认未产生数据事故</td>
+</tr>
+</tbody>
+</table>
+<h3 id="07-v02">0.7 本手册已核对的事实（v0.2 新增：这些不是"看起来对"，是拉到源码/官方文档核过的）</h3>
+<table>
+<thead>
+<tr>
+<th>结论</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>v2.1.5</code> 是当前最新 release（2026-09-08），tag 指向 commit <code>2ca95cf1498…</code></td>
+<td>GitHub API 实测</td>
+</tr>
+<tr>
+<td>Windows 资产名 <code>syncthing-windows-amd64-v2.1.5.zip</code></td>
+<td>release 资产列表</td>
+</tr>
+<tr>
+<td><code>syncthing serve</code> 子命令、<code>--home</code>、<code>--gui-apikey</code> 存在；<code>--no-upgrade</code> 由 kong 从字段名派生（env <code>STNOUPGRADE</code>）</td>
+<td><code>cmd/syncthing/main.go</code>（v2.1.5）</td>
+</tr>
+<tr>
+<td><code>strelaysrv</code> 存在 <code>-listen</code> <code>-pools</code> <code>-token</code> <code>-status-srv</code> <code>-keys</code> <code>-debug</code> <code>-protocol</code> <code>-global-rate</code> <code>-per-session-rate</code> <code>-nat</code></td>
+<td><code>cmd/strelaysrv/main.go</code></td>
+</tr>
+<tr>
+<td>两个 Dockerfile 的 <code>WORKDIR</code> ＝ <code>VOLUME</code>（<code>/var/strelaysrv</code>、<code>/var/stdiscosrv</code>）→ 证书与数据库落在卷里</td>
+<td><code>Dockerfile.strelaysrv</code> / <code>Dockerfile.stdiscosrv</code></td>
+</tr>
+<tr>
+<td><code>stdiscosrv</code> 启动会打印 <code>Loaded certificate keypair deviceId=…</code></td>
+<td><code>cmd/stdiscosrv/main.go</code></td>
+</tr>
+<tr>
+<td>REST：<code>/rest/system/version</code> <code>/status</code> <code>/config/restart-required</code> <code>/config/devices</code> <code>/config/folders</code> <code>/system/connections</code> <code>/db/status</code> <code>/folder/versions</code> 均存在</td>
+<td><code>lib/api/api.go</code></td>
+</tr>
+<tr>
+<td><code>/rest/system/connections</code> 字段：<code>address</code> <code>at</code> <code>clientVersion</code> <code>connected</code> <code>inBytesTotal</code> <code>isLocal</code> <code>outBytesTotal</code> <code>paused</code> <code>startedAt</code> <code>type</code>；<code>type</code> 取值 <code>tcp-client</code> <code>tcp-server</code> <code>quic-client</code> <code>quic-server</code> <code>relay-client</code> <code>relay-server</code></td>
+<td>官方 REST 文档</td>
+</tr>
+<tr>
+<td>客户端带 token 的 relay URI 格式：<code>relay://&lt;host&gt;[:port]/?id=&lt;relay device ID&gt;&amp;token=&lt;token&gt;</code></td>
+<td>官方 <code>users/strelaysrv.rst</code></td>
+</tr>
+<tr>
+<td><strong><code>bytesProxied</code> 是双向合计</strong>；<code>kbps10s1m5m15m30m60m</code> 也由它差分而来</td>
+<td><code>cmd/strelaysrv/session.go</code>：<code>Serve()</code> 起两个 proxy goroutine，两边都 <code>Add(n)</code></td>
+</tr>
+<tr>
+<td><strong>relay 的 ID 与 URI 在默认启动下不会打印</strong>（<code>ID:</code> 在 <code>if debug</code> 内、URI 在 <code>if natEnabled</code> 内）</td>
+<td><code>cmd/strelaysrv/main.go:191-193</code>、<code>:213+</code></td>
+</tr>
+<tr>
+<td><code>stdiscosrv</code> 的 <code>--db-dir</code> 语义是<strong>目录</strong>（help: "Database directory"，默认 <code>.</code>）</td>
+<td><code>cmd/stdiscosrv/main.go</code>（kong 结构体）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1">1. 测试拓扑与变量</h2>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>建议机器</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>公司 Windows 电脑 1</td>
+<td>主发送端 / 局域网测试</td>
+</tr>
+<tr>
+<td>B</td>
+<td>公司 Windows 电脑 2</td>
+<td>主接收端 / 局域网测试</td>
+</tr>
+<tr>
+<td>C</td>
+<td>家里 MateBook</td>
+<td>跨网测试</td>
+</tr>
+<tr>
+<td>D</td>
+<td>测试机 / WinServer-A</td>
+<td>破坏性与并发测试</td>
+</tr>
+<tr>
+<td>S</td>
+<td>阿里云 ECS</td>
+<td><code>stdiscosrv</code> + <code>strelaysrv</code></td>
+</tr>
+</tbody>
+</table>
+<p>全文变量统一：</p>
+<pre><code class="language-text">&lt;SYNCTHING_VERSION&gt;  = v2.1.5
+&lt;SOURCE_COMMIT&gt;      = 2ca95cf1498104113fdfde46df4107f2450a0f71   （v2.1.5 tag 实测指向）
+&lt;ECS_PUBLIC_IP&gt;      = 你的 ECS 公网 IP
+&lt;DISCO_HOST&gt;         = discovery 域名；没有就先用 IP
+&lt;DISCO_SERVER_ID&gt;    = stdiscosrv 启动日志里的 deviceId
+&lt;RELAY_HOST&gt;         = relay 域名；没有就先用公网 IP
+&lt;RELAY_DEVICE_ID&gt;    = relay 自身的 Device ID（获取方式见 §3.3，v0.2 修正）
+&lt;RELAY_TOKEN&gt;        = 32 字节以上随机串，不写进报告正文
+&lt;DEVICE_A_ID&gt; ...    = 各端 Syncthing Device ID
+&lt;FOLDER_ID&gt;          = 本轮专用高熵随机 Folder ID
+</code></pre>
+<hr />
+<h2 id="2">2. 版本锁定：第一件事就做</h2>
+<h3 id="21-windows">2.1 Windows 客户端</h3>
+<p>按 §0.5 P6：<strong>一台下载 → 记录 hash → 复制到四台</strong>。四台都执行：</p>
+<pre><code class="language-powershell">cd C:\LanSync\m05\bin
+.\syncthing.exe --version
+Get-FileHash .\syncthing.exe -Algorithm SHA256
+Get-FileHash .\syncthing-windows-amd64-v2.1.5.zip -Algorithm SHA256
+</code></pre>
+<p><strong>通过条件</strong>：四台 <code>syncthing.exe --version</code> 完全一致；四份 exe 的 SHA-256 完全一致。</p>
+<h3 id="22-ecs-tag-discovery-relay">2.2 ECS：从同一 tag 构建 discovery / relay</h3>
+<pre><code class="language-bash">sudo mkdir -p /opt/lan-sync/m05
+cd /opt/lan-sync/m05
+
+git clone --depth 1 --branch v2.1.5 https://github.com/syncthing/syncthing.git src
+cd src
+git rev-parse HEAD          # 期望 2ca95cf1498104113fdfde46df4107f2450a0f71
+git describe --tags --always
+
+docker build -f Dockerfile.stdiscosrv -t lansync/stdiscosrv:v2.1.5 .
+docker build -f Dockerfile.strelaysrv -t lansync/strelaysrv:v2.1.5 .
+
+docker image inspect lansync/stdiscosrv:v2.1.5 --format '{{.Id}}'
+docker image inspect lansync/strelaysrv:v2.1.5 --format '{{.Id}}'
+</code></pre>
+<p><strong>通过条件</strong>：tag、commit、两个镜像 ID 全部记录；<strong>后续一律用这个 tag，不用 <code>latest</code></strong>。</p>
+<h3 id="23">2.3 版本锁定表</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>实测值</th>
+<th>PASS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Syncthing version</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Source tag</td>
+<td>v2.1.5</td>
+<td></td>
+</tr>
+<tr>
+<td>Source commit（完整 SHA）</td>
+<td>期望 <code>2ca95cf1498104113fdfde46df4107f2450a0f71</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Windows amd64 ZIP SHA-256</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>syncthing.exe</code> SHA-256</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>stdiscosrv</code> image ID</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>strelaysrv</code> image ID</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A/B/C/D 版本与 hash 一致</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>自动升级关闭（<code>--no-upgrade</code>）</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>升级策略（写入表尾）</strong>：阶段一不自动升级；仅在安全修复或明确需要上游功能时提升级；升级前重跑"基础同步 + E3 + E5 + E6 + relay 回落"回归。</p>
+<hr />
+<h2 id="3-ecs">3. ECS 基线部署</h2>
+<h3 id="31-relay-token">3.1 生成 relay token</h3>
+<pre><code class="language-bash">openssl rand -hex 32
+sudo install -d -m 700 /opt/lan-sync/m05/secrets
+sudo sh -c 'printf &quot;%s&quot; &quot;&lt;RELAY_TOKEN&gt;&quot; &gt; /opt/lan-sync/m05/secrets/relay-token'
+sudo chmod 600 /opt/lan-sync/m05/secrets/relay-token
+</code></pre>
+<p>报告中只写 <code>TOKEN_SET=yes</code>，<strong>不要粘贴 token</strong>。</p>
+<h3 id="32-stdiscosrv">3.2 启动 <code>stdiscosrv</code></h3>
+<blockquote>
+<p><strong>v0.2 修正</strong>：<code>--db-dir</code> 的语义是<strong>目录</strong>（help 文本 "Database directory"，默认 <code>.</code>）。
+v0.1 写的 <code>--db-dir=/var/stdiscosrv/discovery.db</code> 会让数据库落到 <code>/var/stdiscosrv/discovery.db/discovery.db</code>，是一个隐藏坑。</p>
+</blockquote>
+<pre><code class="language-bash">sudo mkdir -p /opt/lan-sync/m05/disco
+
+docker run -d \
+  --name m05-disco \
+  --restart unless-stopped \
+  -p 8443:8443/tcp \
+  -v /opt/lan-sync/m05/disco:/var/stdiscosrv \
+  lansync/stdiscosrv:v2.1.5 \
+  --listen=:8443 \
+  --db-dir=/var/stdiscosrv
+</code></pre>
+<pre><code class="language-bash">docker logs m05-disco --tail 100      # 记下 deviceId
+docker ps --filter name=m05-disco
+ss -lntp | grep 8443
+</code></pre>
+<p>第一次启动会生成 <code>cert.pem</code> / <code>key.pem</code>（落在卷里，重启不丢身份）。把日志里的 <strong><code>deviceId</code></strong> 记为 <code>&lt;DISCO_SERVER_ID&gt;</code>，客户端用它做证书固定。</p>
+<h3 id="33-strelaysrv-id">3.3 启动私有 <code>strelaysrv</code>（含 ID 获取的修正）</h3>
+<blockquote>
+<p><strong>v0.2 修正</strong>：relay 的 <strong>ID 和 URI 默认不会出现在日志里</strong>——源码里 <code>log.Println("ID:", id)</code> 在 <code>if debug {}</code> 之内（<code>main.go:191-193</code>），URI 打印在 <code>if natEnabled {}</code> 之内（<code>:213+</code>）。
+v0.1 让"从日志复制 <code>relay://…/?id=…</code>"照做会拿不到东西。<strong>取 ID 用 <code>-debug</code> 跑一次</strong>（<code>-debug</code> 会打每字节日志，取到就撤），或改用 <code>-nat</code> 让 UPnP/NAT-PMP 打洞时打印 URI。</p>
+</blockquote>
+<pre><code class="language-bash">sudo mkdir -p /opt/lan-sync/m05/relay
+RELAY_TOKEN=&quot;$(sudo cat /opt/lan-sync/m05/secrets/relay-token)&quot;
+
+# 第一次：带 -debug 只为拿 ID
+docker run --rm \
+  -v /opt/lan-sync/m05/relay:/var/strelaysrv \
+  lansync/strelaysrv:v2.1.5 \
+  -pools=&quot;&quot; -token=&quot;$RELAY_TOKEN&quot; \
+  -keys=/var/strelaysrv \
+  -listen=:22067 -status-srv=:22070 \
+  -debug 2&gt;&amp;1 | head -40        # 记下 &quot;ID: XXXX-XXXX-...&quot; = &lt;RELAY_DEVICE_ID&gt;
+
+# 正式启动（去掉 -debug）
+docker run -d \
+  --name m05-relay \
+  --restart unless-stopped \
+  -p 22067:22067/tcp \
+  -p 127.0.0.1:22070:22070/tcp \
+  -v /opt/lan-sync/m05/relay:/var/strelaysrv \
+  lansync/strelaysrv:v2.1.5 \
+  -pools=&quot;&quot; \
+  -token=&quot;$RELAY_TOKEN&quot; \
+  -keys=/var/strelaysrv \
+  -listen=:22067 \
+  -status-srv=:22070
+</code></pre>
+<pre><code class="language-bash">docker logs m05-relay --tail 60
+curl -s http://127.0.0.1:22070/status | python3 -m json.tool
+ss -lntp | grep -E '22067|22070'
+</code></pre>
+<p><strong>客户端 relay URI（自行拼装，格式来自官方文档）</strong>：</p>
+<pre><code class="language-text">relay://&lt;RELAY_HOST&gt;:22067/?id=&lt;RELAY_DEVICE_ID&gt;&amp;token=&lt;RELAY_TOKEN&gt;
+</code></pre>
+<blockquote>
+<p><code>-pools=""</code> 与 <code>-token</code> 都会让 relay 退出公共池（这一点 relay 启动日志里有显式警告确认）。
+<code>-keys=/var/strelaysrv</code> 与 Dockerfile 的 <code>WORKDIR</code>/<code>VOLUME</code> 一致，显式写出来是为了防止上游改 Dockerfile 后身份文件跑到卷外。</p>
+</blockquote>
+<h3 id="34-v02">3.4 安全组 / 防火墙（v0.2 收紧）</h3>
+<table>
+<thead>
+<tr>
+<th>端口</th>
+<th>是否开放</th>
+<th>来源限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8443/TCP</td>
+<td>开放</td>
+<td>建议限制为家庭/公司出口 IP（§0.5 P9 记录）；至少不要对 0.0.0.0/0 长期开放</td>
+</tr>
+<tr>
+<td>22067/TCP</td>
+<td>开放</td>
+<td><strong>M0.5 期间限制来源 IP</strong>（或临时换非默认端口）——因为共享 token 是"门禁卡不是身份证"，泄漏后无法按设备追责</td>
+</tr>
+<tr>
+<td>22070/TCP</td>
+<td><strong>不开放</strong></td>
+<td>只从 ECS 本机 <code>curl 127.0.0.1:22070/status</code> 读取</td>
+</tr>
+</tbody>
+</table>
+<p>跑完 M0.5 后按 §15 恢复安全组。</p>
+<hr />
+<h2 id="4-windows">4. Windows 客户端初始化</h2>
+<p>A/B/C/D 各自建立独立 Home：</p>
+<pre><code class="language-powershell">New-Item -ItemType Directory -Force C:\LanSync\m05\home | Out-Null
+New-Item -ItemType Directory -Force C:\LanSync\m05\sync | Out-Null
+
+$ApiKey = [guid]::NewGuid().ToString('N')
+$ApiKey | Set-Content C:\LanSync\m05\api-key.txt
+
+C:\LanSync\m05\bin\syncthing.exe serve `
+  --home C:\LanSync\m05\home `
+  --no-browser `
+  --no-upgrade `
+  --gui-apikey $ApiKey
+</code></pre>
+<p>打开本机 GUI（默认 <code>127.0.0.1:8384</code>）完成配置：</p>
+<ol>
+<li><strong>Local Discovery：开启</strong>。</li>
+<li><strong>Global Discovery：开启，但删掉 <code>default</code>，只填自建</strong>：</li>
+</ol>
+<pre><code class="language-text">https://&lt;DISCO_HOST&gt;:8443/?id=&lt;DISCO_SERVER_ID&gt;
+</code></pre>
+<ol start="3">
+<li><strong>Relay：只使用私有 relay。</strong> Sync Protocol Listen Addresses 保留本机 TCP/QUIC，并加入：</li>
+</ol>
+<pre><code class="language-text">relay://&lt;RELAY_HOST&gt;:22067/?id=&lt;RELAY_DEVICE_ID&gt;&amp;token=&lt;RELAY_TOKEN&gt;
+</code></pre>
+<ol start="4">
+<li>删除公共 relay 的动态地址 / <code>default</code> 项。</li>
+<li>远端设备地址保持 <code>dynamic</code>。</li>
+<li>建本轮专用 Folder（A/B/C 共享）；启用 <strong>Staggered Versioning，<code>maxAge = 30</code> 天</strong>。</li>
+<li>设置 <code>.stignore</code>：只放本轮明确忽略项（<code>~$*</code>、<code>.~lock.*</code>、<code>Thumbs.db</code>、<code>.DS_Store</code>），<strong>不要</strong>默认忽略 <code>.git</code> / <code>node_modules</code> / <code>*.tmp</code>。</li>
+</ol>
+<h3 id="41-rest-adapter">4.1 用 REST 证明 Adapter 未来可控</h3>
+<pre><code class="language-powershell">$ApiKey = Get-Content C:\LanSync\m05\api-key.txt
+$H = @{ 'X-API-Key' = $ApiKey }
+
+Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/system/version
+Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/system/status
+Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/config/restart-required
+Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/config/devices
+Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/config/folders
+</code></pre>
+<p>连接类型（字段名已核对）：</p>
+<pre><code class="language-powershell">$r = Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/system/connections
+$r.connections.PSObject.Properties | ForEach-Object {
+    [pscustomobject]@{
+        Device    = $_.Name
+        Connected = $_.Value.connected
+        Type      = $_.Value.type
+        Address   = $_.Value.address
+        InBytes   = $_.Value.inBytesTotal
+        OutBytes  = $_.Value.outBytesTotal
+    }
+} | Format-Table -AutoSize
+</code></pre>
+<p><strong>基础 PASS</strong>：能看到真实的 <code>tcp-*</code> / <code>quic-*</code> / <code>relay-*</code> 类型；REST 能读版本、配置、设备、Folder、连接状态。</p>
+<hr />
+<h1 id="5">5. 五项基础能力验证</h1>
+<h2 id="b1">B1：双机原生同步</h2>
+<p>A/B 同一局域网互加 Device ID，Folder 双向共享。</p>
+<pre><code class="language-powershell">Set-Content C:\LanSync\m05\sync\hello.txt &quot;m05 $(Get-Date -Format o)&quot;
+</code></pre>
+<p><strong>PASS</strong>：B 出现相同文件；新增/修改/删除/重命名最终一致。</p>
+<h2 id="b2-discovery">B2：自建 discovery 生效</h2>
+<p>保持 A/B/C 的 Global Discovery 只有自建地址。</p>
+<pre><code class="language-bash">docker logs m05-disco --since 10m
+</code></pre>
+<p><strong>PASS</strong>：能看到客户端向自建 discovery announce/query；客户端不依赖官方 discovery。</p>
+<h2 id="b3-relay-token">B3：私有 relay + token 生效</h2>
+<p>先确认正确 token 能连；再在 D 上故意用错误 token。</p>
+<p><strong>PASS</strong>：正确 token 可加入私有 relay；错误 token 无法加入。<strong>这里验的是「Relay 使用准入」，不是文件访问权限</strong>——另需确认"未互加 Device ID 的设备即使持有 token 也看不到任何文件"（同步成员准入）。</p>
+<h2 id="b4lan-wan-relay">B4：LAN 直连 / WAN relay 自动回落</h2>
+<p>A/B 同网读 <code>/rest/system/connections</code> 记类型；然后 A/C 跨网重复。</p>
+<p><strong>PASS</strong>：LAN 以 <code>tcp-*</code>/<code>quic-*</code> 直连为主；跨网不能直连时自动出现 <code>relay-*</code>，无需人工切换。</p>
+<h2 id="b5-restore-api">B5：版本历史 / Restore API</h2>
+<p>先在 A 建 <code>restore-test.txt</code>，确保同步到 B；再由 A 修改或删除，使 <strong>B</strong> 产生远端变更归档（versioning 只在"远端变更替换/删除本地文件"时归档，本机自己删的不算）。</p>
+<pre><code class="language-powershell">Invoke-RestMethod -Headers $H &quot;http://127.0.0.1:8384/rest/folder/versions?folder=&lt;FOLDER_ID&gt;&quot;
+
+$Body = @{ 'restore-test.txt' = '&lt;VERSION_TIME&gt;' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Headers $H -ContentType 'application/json' `
+  -Body $Body &quot;http://127.0.0.1:8384/rest/folder/versions?folder=&lt;FOLDER_ID&gt;&quot;
+</code></pre>
+<p><strong>PASS</strong>：B 恢复成功；恢复后的文件作为正常本地变更重新同步到其它设备。</p>
+<hr />
+<h1 id="6-e2ecs">6. E2：ECS 真实边界</h1>
+<h2 id="e2-a">E2-A：空载基线</h2>
+<pre><code class="language-bash">date -Is
+free -m
+docker stats --no-stream m05-relay m05-disco
+curl -s http://127.0.0.1:22070/status | python3 -m json.tool
+ss -s
+</code></pre>
+<p>记录：总内存、可用内存、容器 RSS、<code>numConnections</code>、<code>numActiveSessions</code>、<code>numProxies</code>、<code>bytesProxied</code>、<code>uptimeSeconds</code>。</p>
+<h2 id="e2-b-123">E2-B：真实 1/2/3 会话曲线</h2>
+<p>用 A/B/C/D 尽量构造 1、2、3 个同时工作的 relay session，每档至少 10 分钟，每 10 秒采样：</p>
+<pre><code class="language-bash">while true; do
+  date -Is
+  docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' m05-relay
+  curl -s http://127.0.0.1:22070/status
+  sleep 10
+done | tee /opt/lan-sync/m05/e2-session-curve.log
+</code></pre>
+<p><strong>重要</strong>：四台设备不足以"证明绝对最大并发"。报告只能写成：</p>
+<pre><code class="language-text">已实测安全并发 = N_tested
+该并发下峰值内存 = X MiB
+单 session 增量内存近似 = Y MiB/session
+内存是否随传输时长单调上涨 = 是/否
+</code></pre>
+<p>不要把外推值写成"最大并发"。要真值得出上限，另开 relay load-generator 工作项。</p>
+<h2 id="e2-c">E2-C：长时间大文件，内存是否单调增长</h2>
+<p>真实不可压缩大文件（建议 ≥ 5 GB），强制走 relay，连续传输 30–60 分钟。</p>
+<ul>
+<li>RSS 随连接建立上升后基本稳定 → PASS</li>
+<li>RSS 随已传字节持续线性上涨且不回落 → FAIL，查缓冲/泄漏</li>
+<li>OOM / 容器被杀 → FAIL（并按 §0.6 STOP-3 处置）</li>
+</ul>
+<h2 id="e2-d-relay-v02">E2-D：实际 relay 吞吐（v0.2 加了口径说明）</h2>
+<pre><code class="language-bash">curl -s http://127.0.0.1:22070/status &gt; /tmp/relay-before.json
+# ★ 此时开始真实大文件 relay 传输，记录起止时间（date +%s）
+curl -s http://127.0.0.1:22070/status &gt; /tmp/relay-after.json
+</code></pre>
+<pre><code class="language-text">双向合计吞吐 Mbps = (after.bytesProxied - before.bytesProxied) × 8 / 秒数 / 1,000,000
+</code></pre>
+<blockquote>
+<p>⚠️ <strong><code>bytesProxied</code> 是双向合计</strong>（源码 <code>session.go</code>：<code>Serve()</code> 起两个 proxy goroutine，两个方向都 <code>Add(n)</code>）。
+因此上面这个数是<strong>双向</strong>吞吐；要报"单向带宽上限"，除以 2 或直接用客户端侧 <code>outBytesTotal</code> 斜率。<code>/status</code> 里的 <code>kbps10s1m5m15m30m60m</code> 同样是双向。</p>
+</blockquote>
+<hr />
+<h1 id="7-e3">7. E3：文件语义测试集</h1>
+<p>统一 Folder：<code>C:\LanSync\m05\sync</code>。</p>
+<table>
+<thead>
+<tr>
+<th>用例</th>
+<th>操作</th>
+<th>PASS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中文文件名</td>
+<td><code>中文测试.xlsx</code></td>
+<td>两端一致、可打开</td>
+</tr>
+<tr>
+<td>Emoji</td>
+<td><code>项目😀-01.txt</code></td>
+<td>两端一致</td>
+</tr>
+<tr>
+<td>长路径</td>
+<td>构造 &gt; 260 字符完整路径</td>
+<td>不静默丢文件；失败要明确记录</td>
+</tr>
+<tr>
+<td>大小写</td>
+<td>Windows 内测 <code>a.txt</code> / <code>A.txt</code> 行为</td>
+<td>不静默覆盖；记录实际行为</td>
+</tr>
+<tr>
+<td>Office/WPS 锁文件</td>
+<td>打开 xlsx → 编辑 → 保存 → 保持打开再保存</td>
+<td>锁文件不污染；最终文件可同步</td>
+</tr>
+<tr>
+<td>断网 30 分钟</td>
+<td>A 断网连续改多次后恢复</td>
+<td>最终一致、无异常冲突</td>
+</tr>
+<tr>
+<td>≥ 4 GB 文件</td>
+<td>真实 ISO/视频</td>
+<td>完整同步，两端 hash 一致</td>
+</tr>
+<tr>
+<td>10 万文件</td>
+<td>小文件集</td>
+<td>扫描/索引完成，无丢失</td>
+</tr>
+<tr>
+<td>双端并发修改</td>
+<td>A/B 断网改同一文件后恢复</td>
+<td>产生原生 <code>.sync-conflict-*</code>，双方内容都保留</td>
+</tr>
+<tr>
+<td>远端删除 + versioning</td>
+<td>A 删除已同步文件</td>
+<td>B 若有归档条件，<code>/rest/folder/versions</code> 能查到</td>
+</tr>
+</tbody>
+</table>
+<p>校验与造数：</p>
+<pre><code class="language-powershell">Get-FileHash C:\LanSync\m05\sync\bigfile.bin -Algorithm SHA256
+</code></pre>
+<pre><code class="language-python">from pathlib import Path
+root = Path(r&quot;C:\LanSync\m05\sync\many&quot;)
+root.mkdir(parents=True, exist_ok=True)
+for i in range(100_000):
+    p = root / f&quot;{i//1000:03d}&quot; / f&quot;f-{i:06d}.txt&quot;
+    p.parent.mkdir(parents=True, exist_ok=True)   # v0.2：加 parents=True
+    p.write_text(str(i), encoding=&quot;utf-8&quot;)
+</code></pre>
+<p>记录冷扫描起止时间与 <code>/rest/db/status?folder=&lt;FOLDER_ID&gt;</code> 的最终状态。</p>
+<hr />
+<h1 id="8-e4">8. E4：真实中继出流量 + 跨网直连率</h1>
+<h2 id="e4-a">E4-A：正常模式</h2>
+<p>A/C 分属不同网络，direct 与 relay 都可用。做 20 次小/中文件变更，每次读 <code>/rest/system/connections</code>，按 <code>type</code> 分类：</p>
+<pre><code class="language-text">direct 次数 = N_direct     （tcp-* / quic-*）
+relay 次数  = N_relay
+观测直连率 p = N_direct / (N_direct + N_relay)
+</code></pre>
+<p><strong>这只是观测值，不设硬门槛。</strong></p>
+<h2 id="e4-b-relayv02">E4-B：强制 Relay，核对字节数（v0.2 换了做法）</h2>
+<blockquote>
+<p><strong>v0.1 用防火墙 Block 22000/TCP+UDP，逻辑有效（Windows 防火墙 Block 优先于 Allow），但改动面大、容易忘删。</strong>
+<strong>v0.2 首选：临时把 listen address 里的直连项去掉，只留 relay。</strong></p>
+</blockquote>
+<p>在两端（A/C）的 Sync Protocol Listen Addresses 中，临时把 <code>tcp://0.0.0.0:22000</code> 与 <code>quic://0.0.0.0:22000</code> <strong>删掉</strong>，只保留 relay URI；等 <code>/rest/system/connections</code> 的 <code>type</code> 变成 <code>relay-*</code> 后再传已知大小的真实文件。测完<strong>把 listen address 改回原样</strong>。</p>
+<blockquote>
+<p>备选（如果必须验证"网络层真的不通"）：才用防火墙法，并在测完立即删除规则。</p>
+</blockquote>
+<pre><code class="language-powershell"># 备选方案（用后必须删）
+New-NetFirewallRule -DisplayName 'M05 Block ST TCP 22000' -Direction Outbound -Protocol TCP -RemotePort 22000 -Action Block
+New-NetFirewallRule -DisplayName 'M05 Block ST UDP 22000' -Direction Outbound -Protocol UDP -RemotePort 22000 -Action Block
+# ...测完...
+Remove-NetFirewallRule -DisplayName 'M05 Block ST TCP 22000'
+Remove-NetFirewallRule -DisplayName 'M05 Block ST UDP 22000'
+</code></pre>
+<p>数据采集（ECS）：</p>
+<pre><code class="language-bash">curl -s http://127.0.0.1:22070/status | tee /tmp/e4-before.json
+# 传文件
+curl -s http://127.0.0.1:22070/status | tee /tmp/e4-after.json
+</code></pre>
+<p>同时记录客户端侧 <code>outBytesTotal</code> / <code>inBytesTotal</code>。</p>
+<p><strong>PASS</strong>：<code>bytesProxied</code> 增量与客户端实际传输量同一量级（偏差 ≤30% 记 PASS，超出要解释协议/多连接/重试原因并重算 §13）。
+<strong>成本口径</strong>：<code>bytesProxied</code> 是双向；<strong>阿里云只对出网计费</strong>，算钱要用"出网单向"（客户端 <code>outBytesTotal</code> 或 双向/2 近似），否则会把 §13 高估约 2 倍。</p>
+<h2 id="e4-c">E4-C：回填成本公式</h2>
+<pre><code class="language-text">中继出流量（单向）≈ 跨网改动量 × (1 - p) × 接收端数量
+全中继悲观上界     = 跨网改动量 × 1 × 接收端数量
+</code></pre>
+<p>两个都写进报告：用实测 <code>p</code> 算预期，保留 <code>p=0</code> 作为上界。</p>
+<hr />
+<h1 id="9-e5">9. E5：四类文件操作感知时延</h1>
+<h2 id="91">9.1 先同步系统时钟</h2>
+<pre><code class="language-powershell">w32tm /resync
+Get-Date -Format o
+</code></pre>
+<p>两机时钟差最好 &lt; 100 ms。</p>
+<h2 id="92">9.2 两组配置</h2>
+<p>组 1：<code>fsWatcherDelayS = 10</code>（默认基线）
+组 2：调到候选值（建议先 <code>1</code> 秒，不要一上来就 0.01）</p>
+<p>每组对新增/修改/重命名/删除各做 30 次。文件名带源端 UTC 毫秒：</p>
+<pre><code class="language-powershell">$ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$name = &quot;m05-create-$ts.txt&quot;
+Set-Content (Join-Path 'C:\LanSync\m05\sync' $name) $ts
+</code></pre>
+<p>B 端用 FileSystemWatcher 记录落地时间（v0.2 修正：日志路径统一用变量）：</p>
+<pre><code class="language-powershell">$root = 'C:\LanSync\m05\sync'
+$log  = 'C:\LanSync\m05\e5-events.csv'
+&quot;utc_ms,event,name&quot; | Set-Content $log
+
+$fsw = New-Object System.IO.FileSystemWatcher $root
+$fsw.IncludeSubdirectories = $true
+$fsw.EnableRaisingEvents = $true
+
+$action = {
+    $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    &quot;$ms,$($Event.SourceEventArgs.ChangeType),$($Event.SourceEventArgs.Name)&quot; |
+        Add-Content 'C:\LanSync\m05\e5-events.csv'
+}
+Register-ObjectEvent $fsw Created -Action $action | Out-Null
+Register-ObjectEvent $fsw Changed  -Action $action | Out-Null
+Register-ObjectEvent $fsw Renamed  -Action $action | Out-Null
+Register-ObjectEvent $fsw Deleted  -Action $action | Out-Null
+</code></pre>
+<p>对 create 用例，文件名里的毫秒就是源时间；修改/重命名/删除请在 A 端另写 <code>source-events.csv</code>，按文件名配对。</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th style="text-align: right;">delay=10 P50</th>
+<th style="text-align: right;">delay=10 P95</th>
+<th style="text-align: right;">调优后 P50</th>
+<th style="text-align: right;">调优后 P95</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新增</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+</tr>
+<tr>
+<td>修改</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+</tr>
+<tr>
+<td>重命名</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+</tr>
+<tr>
+<td>删除</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>判定沿用 PRD §18：新增/修改 P95 ≤3s 达标；3–10s 可接受但须解释；&gt;10s 必须给缓解措施。删除/重命名单列，不强套 3 秒。</p>
+<hr />
+<h1 id="10-e6">10. E6：网络切换与自动恢复</h1>
+<p>五个场景，每个 <strong>20 次</strong>：</p>
+<ol>
+<li>公司 Wi-Fi → 手机热点</li>
+<li>有线 → Wi-Fi</li>
+<li>休眠 → 唤醒</li>
+<li>拔网线 → 恢复</li>
+<li>直连断开 → relay 接管</li>
+</ol>
+<h2 id="101">10.1 自动采样脚本</h2>
+<pre><code class="language-powershell">$ApiKey = Get-Content C:\LanSync\m05\api-key.txt
+$H = @{ 'X-API-Key' = $ApiKey }
+$Device = '&lt;REMOTE_DEVICE_ID&gt;'
+$Out = 'C:\LanSync\m05\e6-connection-log.csv'
+&quot;utc_ms,connected,type,address&quot; | Set-Content $Out
+
+while ($true) {
+    try {
+        $r = Invoke-RestMethod -Headers $H http://127.0.0.1:8384/rest/system/connections
+        $c = $r.connections.$Device
+        $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        &quot;$ms,$($c.connected),$($c.type),$($c.address)&quot; | Add-Content $Out
+    } catch {}
+    Start-Sleep -Milliseconds 250
+}
+</code></pre>
+<p>人工制造场景，每次记录操作开始时间；脚本会留下 <code>connected=false → true</code> 的区间与恢复后的类型。</p>
+<h2 id="102">10.2 结果表</h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th style="text-align: right;">20 次 P50</th>
+<th style="text-align: right;">20 次 P95</th>
+<th>恢复后主要类型</th>
+<th>是否需调优</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wi-Fi → 热点</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>有线 → Wi-Fi</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>休眠 → 唤醒</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>拔线 → 恢复</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Direct → Relay</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>先用默认 <code>reconnectionIntervalS</code> 跑一轮（<strong>默认 20 秒、下限 5 秒</strong>，源码实测）。普遍过慢再调小重测。<strong>最终 SLA 只由这张表决定，不预设"5 秒"。</strong></p>
+<hr />
+<h1 id="11-status-v02">11. <code>/status</code> 到底看什么（v0.2 补真实字段名）</h1>
+<pre><code class="language-bash">curl -s http://127.0.0.1:22070/status | python3 -m json.tool
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bytesProxied</code></td>
+<td><strong>双向</strong>累计转发字节</td>
+<td>E4 核心（注意口径）</td>
+</tr>
+<tr>
+<td><code>numActiveSessions</code></td>
+<td>当前活跃转发 session</td>
+<td>E2 核心</td>
+</tr>
+<tr>
+<td><code>numConnections</code></td>
+<td>连到 relay 的客户端数</td>
+<td>E2</td>
+</tr>
+<tr>
+<td><code>numProxies</code></td>
+<td>转发代理数（≈ session×2）</td>
+<td>E2 交叉核对</td>
+</tr>
+<tr>
+<td><code>numPendingSessionKeys</code></td>
+<td>待配对 session（每 session 两个 key）</td>
+<td>排查连接异常</td>
+</tr>
+<tr>
+<td><code>kbps10s1m5m15m30m60m</code></td>
+<td>6 个时间窗的双向速率（kbps）</td>
+<td>快速看吞吐趋势</td>
+</tr>
+<tr>
+<td><code>uptimeSeconds</code> / <code>startTime</code></td>
+<td>运行时长</td>
+<td>长跑实验</td>
+</tr>
+<tr>
+<td><code>options</code></td>
+<td><code>per-session-rate</code> / <code>global-rate</code> / <code>pools</code> / <code>provided-by</code> 等启动参数</td>
+<td>确认限速与私有化生效</td>
+</tr>
+<tr>
+<td><code>version</code> / <code>buildHost</code> / <code>goVersion</code> / <code>goNumRoutine</code></td>
+<td>版本与运行态</td>
+<td>版本锁定核对</td>
+</tr>
+</tbody>
+</table>
+<p><strong>不要</strong>从 <code>/status</code> 推导"哪台设备用了多少流量"——阶段一没有设备维度。</p>
+<hr />
+<h1 id="12-m05">12. M0.5 最终验证报告模板</h1>
+<h2 id="121">12.1 总结</h2>
+<pre><code class="language-text">执行日期：
+执行人：
+PRD：v0.9 rc
+Syncthing：
+Commit：
+ECS：&lt;ECS_PUBLIC_IP&gt;（出口 IP：____）
+结论：PASS / CONDITIONAL PASS / FAIL
+是否允许冻结 v1.0：YES / NO
+</code></pre>
+<h2 id="122-idv02">12.2 复现所需的 ID（v0.2 新增）</h2>
+<pre><code class="language-text">DISCO_SERVER_ID   = ______   （stdiscosrv deviceId）
+RELAY_DEVICE_ID   = ______   （relay 自身 Device ID）
+DEVICE_A_ID       = ______
+DEVICE_B_ID       = ______
+DEVICE_C_ID       = ______
+DEVICE_D_ID       = ______
+FOLDER_ID         = ______
+RELAY_TOKEN       = TOKEN_SET=yes（不写内容）
+</code></pre>
+<h2 id="123">12.3 五项基础能力</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>结果</th>
+<th>证据路径</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>双机同步</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>自建 stdiscosrv</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>私有 relay + token</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>LAN direct / WAN fallback</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>REST + version restore</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="124-e2e6">12.4 E2–E6</h2>
+<table>
+<thead>
+<tr>
+<th>实验</th>
+<th>关键数字</th>
+<th>PASS/FAIL</th>
+<th>回填章节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E2</td>
+<td>安全实测并发、峰值内存、双向/单向吞吐</td>
+<td></td>
+<td>§13 / §15</td>
+</tr>
+<tr>
+<td>E3</td>
+<td>语义用例通过数 / 失败项</td>
+<td></td>
+<td>§15 / §18</td>
+</tr>
+<tr>
+<td>E4</td>
+<td>直连率 p、<code>bytesProxied</code> 与客户端字节偏差</td>
+<td></td>
+<td>§13</td>
+</tr>
+<tr>
+<td>E5</td>
+<td>四类操作 P50/P95（两组配置）</td>
+<td></td>
+<td>§11 / §18</td>
+</tr>
+<tr>
+<td>E6</td>
+<td>五场景恢复 P50/P95</td>
+<td></td>
+<td>§11 / §18</td>
+</tr>
+</tbody>
+</table>
+<h2 id="125-13">12.5 §13 回填</h2>
+<pre><code class="language-text">ECS 实测 relay 吞吐（双向）＝ ___ Mbps  → 单向 ≈ ___ Mbps
+观测跨网直连率 p ＝ ___
+按实测 p 预计月中继出流量（单向）＝ ___ GB
+全中继悲观上界 ＝ ___ GB
+预计月流量费（0.8 元/GB × 出网单向）＝ ___ 元
+relay 1/2/3 session 峰值内存 ＝ ___ / ___ / ___ MiB
+是否发现长传内存单调上涨 ＝ YES / NO
+</code></pre>
+<h2 id="126-14">12.6 §14 回填</h2>
+<pre><code class="language-text">M0.5 ＝ PASS / CONDITIONAL / FAIL
+M1 准入 G1/G2/G4 ＝ ___
+阶段一 2–4 周估时是否仍成立 ＝ YES / NO
+新增阻塞项 ＝ ___
+</code></pre>
+<h2 id="127-15">12.7 §15 回填</h2>
+<pre><code class="language-text">ECS OOM 风险：高/中/低，依据 ___
+Watcher 时延风险：高/中/低，依据 ___
+网络切换风险：高/中/低，依据 ___
+Relay 成本风险：高/中/低，依据 ___
+Windows 文件语义风险：高/中/低，依据 ___
+</code></pre>
+<hr />
+<h1 id="13-v10-gate">13. 冻结 v1.0 的 Gate</h1>
+<ul>
+<li>[ ] A/B/C/D 使用同一锁定版本与二进制 hash（按 §0.5 P6 的分发方法）</li>
+<li>[ ] <code>stdiscosrv</code>、<code>strelaysrv</code> 来自同一锁定 tag/commit</li>
+<li>[ ] 官方 discovery / public relay 已确认关闭</li>
+<li>[ ] 私有 discovery 生效（<code>deviceId</code> 已固定）</li>
+<li>[ ] 私有 relay 正确 token 可用、错误 token 被拒</li>
+<li>[ ] 未互加 Device ID 的设备即使持有 token 也看不到文件（两层准入都验过）</li>
+<li>[ ] LAN direct 成功</li>
+<li>[ ] WAN direct / relay fallback 成功</li>
+<li>[ ] REST（version/config/connections/folder-versions）满足 Adapter 基线</li>
+<li>[ ] E2 完成并给出实测数字（含双向/单向口径说明）</li>
+<li>[ ] E3 无数据事故；失败项有明确降级口径</li>
+<li>[ ] E4 得到实测直连率 p 与字节偏差</li>
+<li>[ ] E5 得到四类操作 P50/P95</li>
+<li>[ ] E6 得到五场景 P50/P95 并据此定 SLA</li>
+<li>[ ] §13 / §14 / §15 已回填真实数字</li>
+<li>[ ] 版本锁定表已确认</li>
+<li>[ ] G1 Adapter 接口一页设计完成</li>
+<li>[ ] G2 E2EE/设备入网一页流程完成</li>
+</ul>
+<p>全部满足后：</p>
+<pre><code class="language-text">v0.9 rc → v1.0 实施基线
+下一步：M1 / Syncthing Adapter
+</code></pre>
+<hr />
+<h1 id="14">14. 执行时不要做的事</h1>
+<ul>
+<li>不在 M0.5 里写正式 UI。</li>
+<li>不在 M0.5 里 fork relay 做 W1/W2（E1 是并行研究，M3 前决策）。</li>
+<li>不把 <code>/status</code> 的全局（且双向）字节数包装成设备级计量。</li>
+<li>不为"好看"先给 relay 套 Caddy/443；先把 22067 基线跑通。</li>
+<li>不把四台机的 3 个 session 写成"relay 最大并发"。</li>
+<li>不以一次成功代替 E5/E6 的重复样本。</li>
+<li>不用真实敏感工作文件做破坏性测试。</li>
+<li>不在实验结束前升级 Syncthing。</li>
+</ul>
+<hr />
+<h1 id="15-v02">15. 清理与回滚（v0.2 新增）</h1>
+<p>M0.5 结束后按此清场，避免遗留影响后续实施：</p>
+<pre><code class="language-bash"># ① 停并删除容器（保留卷，卷里是证书/DB，先备份再决定）
+docker stop m05-relay m05-disco
+docker rm m05-relay m05-disco
+sudo tar czf /opt/lan-sync/m05/keys-backup-$(date +%F).tgz \
+  -C /opt/lan-sync/m05 relay disco          # relay/disco 的证书与 DB 打包留档
+
+# ② 安全组/防火墙恢复（§3.4 的临时来源限制要撤）
+#    —— 保留 8443/22067 或按需关闭，自行决定，但要记录最终状态
+
+# ③ 服务端日志与采样数据归档
+sudo cp /opt/lan-sync/m05/e2-session-curve.log /opt/lan-sync/m05/ 2&gt;/dev/null || true
+ls -la /opt/lan-sync/m05/
+</code></pre>
+<p>Windows 侧：</p>
+<pre><code class="language-powershell"># ① 防火墙规则（若用过备选方案）
+Get-NetFirewallRule -DisplayName 'M05 Block ST *' | Remove-NetFirewallRule
+
+# ② 把 listen address 改回原样（若用过首选方案）
+#    确认 /rest/system/connections 里能再次出现 tcp-*/quic-*
+
+# ③ 停掉测试实例
+Get-Process syncthing -ErrorAction SilentlyContinue | Stop-Process
+</code></pre>
+<p><strong>保留 vs 删除</strong>：<code>C:\LanSync\m05\sync</code>（测试数据）、<code>e5-events.csv</code>、<code>e6-connection-log.csv</code>、<code>.stversions</code> 至少留到 v1.0 冻结后；报告里的证据路径要保持可打开。</p>
+<hr />
+<h1 id="16-v01-v02">16. 变更记录（v0.1 → v0.2）</h1>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>类型</th>
+<th>改动</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>修正</strong></td>
+<td>relay 的 ID/URI 获取：默认日志不含 ID/URI；改为用 <code>-debug</code> 跑一次取 ID，或 <code>-nat</code> 打印 URI；客户端 URI 自行拼装</td>
+<td><code>cmd/strelaysrv/main.go:191-193</code>（<code>ID:</code> 在 <code>if debug</code> 内）、<code>:213+</code>（URI 在 <code>if natEnabled</code> 内）</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>修正</strong></td>
+<td><code>--db-dir</code> 改为传目录 <code>--db-dir=/var/stdiscosrv</code></td>
+<td>stdiscosrv 的 <code>DBDir</code> help 为 "Database directory"，默认 <code>.</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>修正</strong></td>
+<td>明确 <code>bytesProxied</code>（及 <code>kbps10s1m5m15m30m60m</code>）是<strong>双向合计</strong>；成本回填改用出网单向口径，避免 §13 高估约 2 倍</td>
+<td><code>cmd/strelaysrv/session.go</code>：<code>Serve()</code> 两个 proxy goroutine 均 <code>bytesProxied.Add(n)</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>修正</strong></td>
+<td>E4-B 强制走 relay：首选"临时移除 listen address 的直连项"，防火墙法降为备选并强调恢复</td>
+<td>减少改动面与"忘删规则"风险</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>修正</strong></td>
+<td>安全组：22067 在 M0.5 期间限制来源 IP（或临时换端口）；8443 亦建议限源</td>
+<td>共享 token 只保护 relay 资源、不识别设备（PRD §2.4 威胁模型）</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>补充</strong></td>
+<td>§0.5 前置检查清单 P1–P9（磁盘、内存、Docker、端口、旧实例、二进制统一分发、时钟、空间、出口 IP）</td>
+<td>避免白跑</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>补充</strong></td>
+<td>§0.6 停工条件 STOP-1…5</td>
+<td>原版只有 PASS 判据，没有"何时停"</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>补充</strong></td>
+<td>§15 清理与回滚（容器/卷备份/防火墙恢复/listen 还原/证据保留）</td>
+<td>原版无清场步骤</td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>补充</strong></td>
+<td>§12.2 报告必录 ID（disco server ID、relay device ID、四端 Device ID、folder ID、出口 IP）</td>
+<td>复现必需</td>
+</tr>
+<tr>
+<td>10</td>
+<td><strong>补充</strong></td>
+<td>§0.7「已核对事实」表 + §11 真实字段名 + E5/E3 脚本瑕疵修复（日志路径变量化、<code>mkdir(parents=True)</code>）</td>
+<td>逐条源自源码/官方文档实测</td>
+</tr>
+<tr>
+<td>11</td>
+<td><strong>保留</strong></td>
+<td>B1–B5 五项基础能力、E2–E6、冻结 Gate、§14 不做的事</td>
+<td>v0.1 已正确，逐条核对通过</td>
+</tr>
+</tbody>
+</table></main>
+<footer>M0.5 操作手册 v0.2 · 生成于 2026-09-13</footer></div>
+</body></html>

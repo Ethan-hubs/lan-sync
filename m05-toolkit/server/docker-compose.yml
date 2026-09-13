@@ -1,0 +1,44 @@
+# M0.5 服务端：自建 stdiscosrv + 私有 strelaysrv
+# 关键点（对照组：手册 §3.2/§3.3）：
+#   - 版本锁定：镜像 tag 来自 .env 的 SYNCTHING_TAG，不用 latest
+#   - stdiscosrv 的 db-dir 传【目录】（help 文本 "Database directory"）
+#   - relay 显式 -keys 指向卷内，保证 relay 身份（证书）持久化
+#   - -pools="" + -token 让 relay 退出公共池；status 端口只绑本机
+services:
+  disco:
+    image: lansync/stdiscosrv:${SYNCTHING_TAG}
+    container_name: m05-disco
+    restart: unless-stopped
+    ports:
+      - "${DISCO_PORT}:8443/tcp"
+    volumes:
+      - ${DATA_ROOT}/disco:/var/stdiscosrv
+    command:
+      - --listen=:8443
+      - --db-dir=/var/stdiscosrv          # 目录，不是文件路径
+      - --metrics-listen=:9091            # Prometheus 指标（可选，本机）
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8443/"]   # 探活即可，HTTPS 会 4xx
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  relay:
+    image: lansync/strelaysrv:${SYNCTHING_TAG}
+    container_name: m05-relay
+    restart: unless-stopped
+    ports:
+      - "${RELAY_PORT}:22067/tcp"
+      - "127.0.0.1:${RELAY_STATUS_PORT}:22070/tcp"   # 只绑本机，不对公网开放
+    volumes:
+      - ${DATA_ROOT}/relay:/var/strelaysrv
+      - ${DATA_ROOT}/secrets/relay-token:/run/secrets/relay-token:ro
+    # token 从文件读，避免出现在 ps / compose 文件里
+    command: >
+      sh -c 'exec /bin/strelaysrv
+      -pools=""
+      -token="$(cat /run/secrets/relay-token)"
+      -keys=/var/strelaysrv
+      -listen=:22067
+      -status-srv=:22070
+      -provided-by="private-lan-sync-relay"'
