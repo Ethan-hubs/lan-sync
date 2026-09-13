@@ -1,0 +1,193 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>迭代 1 独立复核报告（太极 → Codex）</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>迭代 1 独立复核报告（太极 → Codex）<span class="badge">实跑复核</span></h1><div class="meta">2026-09-14 · 在我方 Linux + 自建 v2.1.5 实例上实跑其测试：单元 22/22、集成 6/6（外部实例模式）、6/6（自建实例模式）</div></div></header>
+<div class="wrap"><main><h1 id="1-codex">迭代 1 独立复核报告（太极 → Codex）</h1>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>复核对象</td>
+<td><code>main</code> @ <code>2e965a4</code>（7 个提交：<code>5fab17c</code> → <code>2e965a4</code>），<strong>未推送远端</strong>，经 <code>git bundle</code> 取回</td>
+</tr>
+<tr>
+<td>复核时间</td>
+<td>2026-09-14 00:09 CST</td>
+</tr>
+<tr>
+<td>复核环境</td>
+<td>Linux 6.17.0-1013-azure x86_64 · .NET SDK <strong>10.0.401</strong>（与 <code>global.json</code> 一致）· 自建一对干净 Syncthing <strong>v2.1.5</strong>（GUI 8394/8395、同步 22011/22012，关官方 discovery/relay/STUN）</td>
+</tr>
+<tr>
+<td>复核方式</td>
+<td><strong>不采信自述</strong>：静态审查源码 + 在<strong>我方机器上实跑其测试套件</strong>（两种夹具模式各跑一遍）</td>
+</tr>
+<tr>
+<td>结论</td>
+<td>✅ <strong>通过</strong> —— 单元 <strong>22/22</strong>、集成 <strong>6/6</strong>（外部实例模式）、集成 <strong>6/6</strong>（自建实例模式）</td>
+</tr>
+<tr>
+<td>原始证据</td>
+<td><code>/data/lan-sync/review/iter1-test-output.txt</code>；代码快照 <code>/data/lan-sync/review/iter1</code>、<code>/data/lan-sync/review/iter1-linux</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1">1. 复核怎么做的</h2>
+<ol>
+<li><strong>取代码</strong>：Codex 未推送远端，且其所在机器（华为笔记本 <code>D:\GPTWork\lan-sync</code>）只在一个 SSH 窗口内可达 → 用 <code>git bundle create --all</code> 取回（348 KB），在我方 clone。</li>
+<li><strong>静态审查</strong>：逐文件读 <code>src/</code> 与 <code>tests/</code>（共 1646 行 C#），对照 G1 契约与《Codex-交接与任务书 v1.1》§10 的硬约束逐条核对。</li>
+<li><strong>实跑</strong>：在我方 Linux 上执行其测试套件。
+   - 因为 4 个工程都声明 <code>net10.0-windows</code>（Linux 上无法构建），我在<strong>副本</strong>里把 TFM 改为 <code>net10.0</code> 并去掉 <code>TargetPlatform*</code> 属性；<strong>其余代码一字未改</strong>。
+   - 唯一另一处改动：自建实例模式里的 Windows 二进制 SHA-256 常量按 OS 分支（见 §4 P1-2），否则 Linux 上自建模式必然失败。
+   - <strong>对外部实例模式（我要求的接口）未做任何改动</strong>，直接 <code>export LANSW_TEST_A_GUI/APIKEY…</code> 注入我方实例。</li>
+<li><strong>验证清理</strong>：测试结束后核对其 <code>DisposeAsync</code> 是否真清理（见 §3 末行）。</li>
+</ol>
+<hr />
+<h2 id="2">2. 实跑结果（原始输出节选）</h2>
+<pre><code>### 太极独立复核 · 2026-09-14 00:09:51 CST · Linux 6.17.0-1013-azure x86_64 · SDK 10.0.401
+
+### 单元测试
+Passed!  - Failed: 0, Passed: 22, Skipped: 0, Total: 22, Duration: 456 ms - LanSync.Syncthing.Tests.dll (net10.0)
+
+### 集成测试（外部实例注入：A=8394 B=8395，真实 Syncthing v2.1.5）
+Passed!  - Failed: 0, Passed: 6, Skipped: 0, Total: 6, Duration: 21 s - LanSync.IntegrationTests.dll (net10.0)
+
+### 集成测试（自建实例模式：LANSW_SYNCTHING_BIN 指向 Linux 二进制，测试自起两个临时实例）
+Passed!  - Failed: 0, Passed: 6, Skipped: 0, Total: 6, Duration: 23 s - LanSync.IntegrationTests.dll (net10.0)
+</code></pre>
+<blockquote>
+<p>单元测试计数核对：12 个 <code>[TestMethod]</code>，其中连接映射用 <code>[DataRow]</code> 展开 11 例 → 12 − 1 + 11 = <strong>22</strong> ✅ 与自述一致。</p>
+</blockquote>
+<hr />
+<h2 id="3">3. 硬约束逐条核对</h2>
+<table>
+<thead>
+<tr>
+<th>约束（来自交接件 §10）</th>
+<th>核对方式</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只动 <code>src/</code>、<code>tests/</code>、根级构建文件</td>
+<td><code>git log --name-only 5fab17c~1..HEAD</code></td>
+<td>✅ 7 个提交仅触及 <code>src/</code>、<code>tests/</code>、<code>LanSync.sln</code>、<code>global.json</code>、<code>Directory.Build.props</code>、<code>.gitignore</code>；<code>docs/</code>、<code>adapter/</code>、<code>m05-toolkit/</code> <strong>零改动</strong></td>
+</tr>
+<tr>
+<td>不写 UI / 授权 / 账号 / 数据库</td>
+<td>全树扫描</td>
+<td>✅ 无 WPF/WinForms/DB/HTTP 服务端代码；仅 <code>System.Text.Json</code> + <code>HttpClient</code> + MSTest</td>
+</tr>
+<tr>
+<td>无 Docker / Python 运行依赖</td>
+<td>工程文件与测试夹具</td>
+<td>✅ 无</td>
+</tr>
+<tr>
+<td><code>net10.0-windows</code> + 最低 Win10 1809</td>
+<td><code>grep TargetFramework/SupportedOSPlatformVersion</code></td>
+<td>✅ 4 个工程均为 <code>net10.0-windows</code> + <code>10.0.17763.0</code>（另见 §4 P1-1 的可用性意见）</td>
+</tr>
+<tr>
+<td><code>versioning.params.maxAge</code> <strong>字符串 + 单位是秒</strong></td>
+<td>源码 <code>CreateFolderConfiguration</code> + 单测 <code>Add_folder_serializes_staggered_max_age_as_seconds_string</code></td>
+<td>✅ 默认 <code>2592000</code>，序列化为字符串；<strong>这条我已实测</strong>（v2.1.5 回读 <code>"2592000"</code>）</td>
+</tr>
+<tr>
+<td>配置更新 GET→改→PUT，不丢未知字段、无变化不发 PUT</td>
+<td>单测 3 例 + 源码 <code>ApplyChanges/MergeChanges</code></td>
+<td>✅ 未知字段保留、<code>DeepEquals</code> 判等后跳过 PUT</td>
+</tr>
+<tr>
+<td>重启处理</td>
+<td><code>RestartIfRequiredAsync</code>：判 <code>restart-required</code> → POST restart → 轮询 ping</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>版本恢复事务（pause→restore→判空→resume）</td>
+<td>源码检索</td>
+<td>➖ <strong>未实现</strong>（按迭代 1 范围本就只到 C1–C6，属<strong>下一迭代</strong>；本条规则保留给 C7）</td>
+</tr>
+<tr>
+<td><code>folder/errors</code> <strong>只读</strong>，不做清理</td>
+<td><code>SyncthingAdapter.FolderErrors.cs</code> + 单测</td>
+<td>✅ 仅 <code>GET /rest/folder/errors</code>；同时兼容"顶层数组"与 <code>{"errors":[…]}</code> 两种返回形态</td>
+</tr>
+<tr>
+<td>忽略规则走 <code>/rest/db/ignores</code>，不暴露 <code>.stignore</code></td>
+<td><code>SetIgnoresAsync/GetIgnoresAsync</code> + 单测</td>
+<td>✅ 路径与请求体正确，folder 名做了 URL 编码</td>
+</tr>
+<tr>
+<td>连接状态映射（tcp-*/quic-*→Direct，relay-*→Relay，未连→Offline，其余→Unknown，paused 单独表达）</td>
+<td>单测 11 例数据驱动</td>
+<td>✅ 含 <code>tcp-future</code>/<code>quic-future</code>/<code>relay-future</code>/<code>unknown-transport</code> 与 paused 标志</td>
+</tr>
+<tr>
+<td>外部实例注入 + 未提供则自建 + 都不可用则 skip</td>
+<td><code>SyncthingPair.CreateAsync</code> + 实跑两种模式</td>
+<td>✅ 变量只设一半会显式抛错（好）；不可用时 <code>Assert.Inconclusive</code>（=skipped，不会把 <code>dotnet test</code> 判红）</td>
+</tr>
+<tr>
+<td>二进制 SHA-256 校验</td>
+<td>源码常量与我方既有基准比对</td>
+<td>✅ <code>36a0f7bc…f50344</code> 与官方 v2.1.5 Windows 发行包一致（我方此前独立核过同一值）</td>
+</tr>
+<tr>
+<td>测试隔离：串行、随机 Folder ID、专用临时目录</td>
+<td><code>[DoNotParallelize]</code>、<code>lansw-c1-c6-&lt;guid&gt;</code>、<code>%TEMP%/LanSync.IntegrationTests/&lt;guid&gt;</code></td>
+<td>✅ 实跑后核查：临时树已清理、实例上自建 folder 配置已删除、共享实验台（8384/8385）<strong>未受影响</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4">4. 发现的问题（分级，均不影响本轮通过）</h2>
+<p><strong>P1-1 · 全部工程 TFM 都是 <code>net10.0-windows</code>，Linux/CI 无法构建</strong>
+<code>LanSync.Core</code>、<code>LanSync.Syncthing</code> 与两个测试工程都不含 Windows API 依赖（唯一 Windows 分支在测试的 <code>LongPath</code> 辅助类里），却继承了 <code>-windows</code> TFM。后果：任何 Linux/macOS CI 或第三方复核都必须先改副本（我这次就是）。建议：<strong>库与测试改 <code>net10.0</code>，只有将来托盘工程保留 <code>net10.0-windows</code> + <code>SupportedOSPlatformVersion</code></strong>。改完我方即可全自动复核（<code>git clone</code> + 环境变量 + <code>dotnet test</code>），不再需要人工改动。
+<em>注：这也符合"不要无谓抬高 OS 门槛"的同一逻辑——库不需要 Windows 目标框架。</em></p>
+<p><strong>P1-2 · 自建实例模式把 Windows 二进制哈希写死</strong>
+<code>SyncthingPair.RequiredWindowsSha256</code> 是常量，非 Windows 上自建模式必然失败。建议按 OS 选择期望值，或支持 <code>LANSW_SYNCTHING_SHA256</code> 覆盖（我已备好 Linux 值 <code>ab0ea5f3…4ce07f</code>，官方 v2.1.5 linux-amd64 解包二进制）。</p>
+<p><strong>P1-3 · C5 用全局 <code>/rest/system/pause</code></strong>
+全局暂停会连带暂停该实例上其它 folder —— 对"共享实例"场景有副作用。建议契约测试优先用<strong>按设备暂停</strong>（<code>?device=</code>），或在测试文档里明确"集成实例必须专用"。真正的"恢复事务暂停范围"规则（只暂停本次需要、原先非 paused 的对端，<code>finally</code> 只恢复该集合）属于下一迭代 C7。</p>
+<p><strong>P2-4 · <code>GetConnectionsAsync</code> 对非法 device 键会整表失败</strong>
+<code>new DeviceId(key)</code> 校验 8 段，遇到非标准键会抛异常导致整次调用失败。建议跳过并记录，而不是整表抛。</p>
+<p><strong>P2-5 · 外部实例模式下会残留 device 条目</strong>
+folder 配置已正确清理，但 <code>AddDeviceAsync</code> 加的设备条目留在实例上（自建模式整实例销毁，无影响；外部模式会累积）。建议清理或至少在报告里注明。</p>
+<p><strong>P2-6 · 缺 <code>src/</code> 的使用说明</strong>
+仓库根 README 是"设计与工具仓库"那份。建议补一页：SDK 版本（10.0.401）、四个 <code>LANSW_TEST_*</code> 变量与 <code>LANSW_SYNCTHING_BIN</code>、skip 语义、<code>dotnet test</code> 期望结果。</p>
+<p><strong>P2-7 · 未覆盖 C7 恢复事务</strong>（按迭代 1 范围属预期，不算缺陷，列此备忘）</p>
+<hr />
+<h2 id="5">5. 结论与下一步</h2>
+<ul>
+<li><strong>迭代 1 通过独立复核</strong>：约束全部满足，测试在我方机器上真实跑绿（22+6+6），清理行为正确。</li>
+<li>请 <strong>push 到远端</strong>（<code>main</code> 或新建 <code>iter1</code> 分支皆可）——本轮我靠 SSH 取 bundle，推送后复核可完全自动化。</li>
+<li>建议顺手做 <strong>P1-1 / P1-2</strong>（各约 10 分钟）：之后我就能在 Linux 上直接 <code>git clone</code> + <code>dotnet test</code> 完成全自动第三方验证，不再需要改副本。</li>
+<li><strong>迭代 2 建议范围</strong>：C7 版本恢复事务（<code>pause(对端) → restore → 响应字典判空 → finally resume</code>，范围规则见交接件 §10 决定 3）+ G1 增补项 B-1（残留 <code>~syncthing~*.tmp</code> 的<strong>只读呈现</strong>先做，<strong>清理动作</strong>另立一项、需用户显式确认）。</li>
+</ul>
+<p>—— 太极，2026-09-14 00:15 CST</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
