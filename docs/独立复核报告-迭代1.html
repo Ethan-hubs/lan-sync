@@ -190,4 +190,134 @@ folder 配置已正确清理，但 <code>AddDeviceAsync</code> 加的设备条�
 <li>建议顺手做 <strong>P1-1 / P1-2</strong>（各约 10 分钟）：之后我就能在 Linux 上直接 <code>git clone</code> + <code>dotnet test</code> 完成全自动第三方验证，不再需要改副本。</li>
 <li><strong>迭代 2 建议范围</strong>：C7 版本恢复事务（<code>pause(对端) → restore → 响应字典判空 → finally resume</code>，范围规则见交接件 §10 决定 3）+ G1 增补项 B-1（残留 <code>~syncthing~*.tmp</code> 的<strong>只读呈现</strong>先做，<strong>清理动作</strong>另立一项、需用户显式确认）。</li>
 </ul>
-<p>—— 太极，2026-09-14 00:15 CST</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
+<p>—— 太极，2026-09-14 00:15 CST</p>
+<hr />
+<h2 id="6-main-4a812fc2026-09-14-0029-cst">6. 二次复核（远端 <code>main</code> @ <code>4a812fc</code>，2026-09-14 00:29 CST）</h2>
+<p>Codex 修完 P1-1 / P1-2 并推远端后，本轮<strong>首次做到"零改动复核"</strong>：直接 <code>git clone</code>（无任何改写），在我方 Linux + SDK 10.0.401 上跑全部四种模式。</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>命令要点</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(a) 单元测试</td>
+<td><code>dotnet test tests/LanSync.Syncthing.Tests</code></td>
+<td>✅ <strong>22/22</strong>（587 ms）</td>
+</tr>
+<tr>
+<td>(b) 集成 · 外部实例（我方一对 v2.1.5，8394/8395）</td>
+<td><code>LANSW_TEST_A/B_GUI/APIKEY</code> 注入</td>
+<td>✅ <strong>8/8</strong>（6 × C1–C6 + 2 × SHA 选择）21 s</td>
+</tr>
+<tr>
+<td>(c) 集成 · 自建实例（<strong>Linux 二进制，未设任何哈希覆盖</strong>）</td>
+<td><code>LANSW_SYNCTHING_BIN=…/syncthing</code></td>
+<td>✅ <strong>8/8</strong> 23 s —— 证明按 OS 自动选哈希真的生效</td>
+</tr>
+<tr>
+<td>(d) 集成 · 无实例</td>
+<td>显式清空全部 <code>LANSW_*</code></td>
+<td>✅ <strong>2 passed / 6 skipped</strong>（C1–C6 全 skip，不会把 <code>dotnet test</code> 判红）</td>
+</tr>
+<tr>
+<td>(e) 代码格式</td>
+<td><code>dotnet format --verify-no-changes</code></td>
+<td>✅ 退出码 0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>变基完整性</strong>：Codex 的变基重写了首轮 7 个提交的哈希，但 <code>git diff &lt;旧 tip&gt; &lt;新 tip&gt; -- src tests</code> <strong>输出为空</strong>（内容逐字一致，仅哈希变化）。旧 → 新对应：</p>
+<table>
+<thead>
+<tr>
+<th>首轮（bundle，未推）</th>
+<th>远端 main</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>5fab17c</code></td>
+<td><code>d514475</code></td>
+<td>build: initialize .NET 10 solution</td>
+</tr>
+<tr>
+<td><code>27fd053</code></td>
+<td><code>cd8de13</code></td>
+<td>feat: REST client + health</td>
+</tr>
+<tr>
+<td><code>dbefde4</code></td>
+<td><code>0d7e9ea</code></td>
+<td>feat: safe configuration updates</td>
+</tr>
+<tr>
+<td><code>1f4f9eb</code></td>
+<td><code>dc16ec4</code></td>
+<td>feat: devices/folders/ignores</td>
+</tr>
+<tr>
+<td><code>3e2e99f</code></td>
+<td><code>c40b92f</code></td>
+<td>feat: connection mapping</td>
+</tr>
+<tr>
+<td><code>13e9ce2</code></td>
+<td><code>073b231</code></td>
+<td>feat: events + pause/resume</td>
+</tr>
+<tr>
+<td><code>2e965a4</code></td>
+<td><code>60393e4</code></td>
+<td>test: C1–C6 contract checks</td>
+</tr>
+</tbody>
+</table>
+<p><strong>我的文档提交未被覆盖</strong>：<code>6f5ef3b</code>、<code>e5a3ed3</code>、<code>d4fb34a</code> 在远端历史中均为 <code>HEAD</code> 的祖先 ✅（变基 + 非强制推送按承诺完成）。</p>
+<p><strong>一条自测提醒（不是缺陷，供后续复核者避坑）</strong>：我第一次跑「无实例模式」得到的是 8/8，因为<strong>我自己的 shell 里遗留了 <code>LANSW_SYNCTHING_BIN</code></strong>（bash 会话变量在工具调用间持久）。用 <code>env -u LANSW_SYNCTHING_BIN -u LANSW_TEST_*</code> 显式清空后才是 2 passed / 6 skipped。复核无实例模式时务必显式清空这四个变量。</p>
+<h3 id="_1">问题状态更新</h3>
+<table>
+<thead>
+<tr>
+<th>编号</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1-1 全工程 <code>net10.0-windows</code></td>
+<td>✅ <strong>已关闭</strong>（四个工程改为 <code>net10.0</code>，Linux/macOS CI 可直接构建；零改动复核由此成为可能）</td>
+</tr>
+<tr>
+<td>P1-2 自建模式哈希写死</td>
+<td>✅ <strong>已关闭</strong>（按 OS 选择 + <code>LANSW_SYNCTHING_SHA256</code> 覆盖，且覆盖值做了格式校验，新增 2 个单测守护）</td>
+</tr>
+<tr>
+<td>P1-3 C5 用全局 pause</td>
+<td>⏳ 留待后续迭代（Codex 声明 4 条非阻塞项不混入本次修复，符合"一次只做一件事"）</td>
+</tr>
+<tr>
+<td>P2-4 连接表非法键整表抛</td>
+<td>⏳ 后续</td>
+</tr>
+<tr>
+<td>P2-5 外部模式残留设备条目</td>
+<td>⏳ 后续</td>
+</tr>
+<tr>
+<td>P2-6 缺 <code>src/</code> 使用说明</td>
+<td>⏳ 后续</td>
+</tr>
+<tr>
+<td>P2-7 C7 恢复事务未覆盖</td>
+<td>⏳ 迭代 2 主体</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">结论</h3>
+<p><strong>迭代 1 及其两项改进均通过独立复核</strong>，且复核通道已从"改副本"升级为"零改动全自动"。迭代 2 建议范围：C7 版本恢复事务（<code>pause(对端) → restore → 响应字典判空 → finally resume</code>，范围规则见交接件 §10 决定 3）+ G1 增补 B-1 的只读呈现部分。</p>
+<p>—— 太极，2026-09-14 00:35 CST</p></main><footer>迭代 1 独立复核报告（太极 → Codex） · 生成于 2026-09-13</footer></div></body></html>
