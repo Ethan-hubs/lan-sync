@@ -1,11 +1,12 @@
 using LanSync.Core;
+using LanSync.Syncthing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace LanSync.IntegrationTests;
 
 [TestClass]
 [DoNotParallelize]
-public sealed class C1C6ContractTests
+public sealed class C1C7ContractTests
 {
     private static SyncthingPair? _pair;
     private static string? _skipReason;
@@ -22,6 +23,28 @@ public sealed class C1C6ContractTests
         if (_pair is not null)
         {
             await _pair.DisposeAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task B1_temporary_files_are_listed_read_only()
+    {
+        var pair = RequirePair();
+        var relativePath = $"diagnostics/~syncthing~{Guid.NewGuid():N}.tmp";
+        var fullPath = Path.Combine(pair.FolderA, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        LongPath.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        LongPath.WriteAllText(fullPath, "residual");
+
+        try
+        {
+            var files = await pair.A.GetTemporaryFilesAsync(pair.FolderId);
+
+            CollectionAssert.Contains(files.Select(file => file.RelativePath).ToArray(), relativePath);
+            Assert.IsTrue(LongPath.Exists(fullPath), "Read-only diagnostics must not delete temporary files.");
+        }
+        finally
+        {
+            LongPath.DeleteFile(fullPath);
         }
     }
 
@@ -118,12 +141,12 @@ public sealed class C1C6ContractTests
         var pair = RequirePair();
         try
         {
-            await pair.A.PauseAsync();
+            await pair.A.PauseAsync(pair.IdB);
             await WaitUntilAsync(async () => !(await pair.A.GetConnectionAsync(pair.IdB)).Connected, TimeSpan.FromSeconds(30));
         }
         finally
         {
-            await pair.A.ResumeAsync();
+            await pair.A.ResumeAsync(pair.IdB);
         }
 
         var resumed = await pair.A.WaitForConnectionAsync(pair.IdB, TimeSpan.FromSeconds(60));
@@ -156,6 +179,50 @@ public sealed class C1C6ContractTests
             await pair.A.SetIgnoresAsync(pair.FolderId, original);
             LongPath.DeleteFile(source);
         }
+    }
+
+    [TestMethod]
+    public async Task C7_version_restore_transaction()
+    {
+        var pair = RequirePair();
+        var fileName = $"c7-{Guid.NewGuid():N}.txt";
+        var source = Path.Combine(pair.FolderA, fileName);
+        var target = Path.Combine(pair.FolderB, fileName);
+
+        LongPath.WriteAllText(source, "v1");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(60));
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        LongPath.WriteAllText(source, "v2");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v2", TimeSpan.FromSeconds(60));
+
+        IReadOnlyList<VersionEntry>? archived = null;
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(60);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var versions = await pair.B.GetVersionsAsync(pair.FolderId, fileName);
+            if (versions.TryGetValue(fileName, out archived) && archived.Count > 0)
+            {
+                break;
+            }
+
+            await Task.Delay(500);
+        }
+
+        Assert.IsNotNull(archived, "The receiving instance did not archive v1.");
+        Assert.IsNotEmpty(archived);
+        var restore = await pair.B.RestoreVersionAsync(
+            pair.FolderId,
+            fileName,
+            archived[0].VersionTime,
+            new Dictionary<DeviceId, SyncthingAdapter> { [pair.IdA] = pair.A });
+
+        CollectionAssert.Contains(restore.PausedDevices.Select(device => device.Value).ToArray(), pair.IdA.Value);
+        await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(30));
+        await pair.WaitForFileAsync(source, "v1", TimeSpan.FromSeconds(60));
+        Assert.IsTrue((await pair.B.WaitForConnectionAsync(pair.IdA, TimeSpan.FromSeconds(60))).Connected);
     }
 
     private static SyncthingPair RequirePair()
