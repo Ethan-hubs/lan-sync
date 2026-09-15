@@ -24,7 +24,15 @@
 > 结论：产品说明写「**Windows 11 全版本 + Windows 10 LTSC/Enterprise（1809 起）+ Windows Server 2016 起**」，
 > 不要笼统写"支持 Windows 10/11"。
 
-## 2. 目标框架（一条容易致命的选择）
+## 2. 目标框架（分两层：库/测试平台中立，只有托盘工程带 -windows）
+
+**库与测试工程**（`LanSync.Core` / `LanSync.Syncthing` / `tests/*`）：
+
+```xml
+<TargetFramework>net10.0</TargetFramework>          <!-- 平台中立：Linux/CI 也能构建与复核 -->
+```
+
+**托盘工程**（`LanSync.Tray`，唯一带 Windows 目标的工程）：
 
 ```xml
 <TargetFramework>net10.0-windows</TargetFramework>
@@ -33,6 +41,8 @@
 ```
 
 - ❌ **不要**写 `net10.0-windows10.0.22000.0`（或更高）——那是 Win11 的目标框架，会把最低系统要求直接抬到 Win11。
+- ❌ **不要**给库或测试工程加 `-windows`（迭代 1 复核 P1-1 实测：会让 Linux/CI 无法构建，零改动复核就此不可能）。
+  只有托盘工程需要 `-windows`，因为只有它调用 Windows 专有 API（DPAPI / NotifyIcon）。
 - ❌ 不要用 `TargetPlatformMinVersion` 替代 `SupportedOSPlatformVersion`（前者不给编译期警告）。
 - ✅ 需要调用较新 API 时，用 `[SupportedOSPlatform("windows10.0.xxxxx")]` 标注 + 运行时判断，别整体抬版本。
 
@@ -91,9 +101,15 @@
 ## 8. 可自动化检查的清单（建议接进 CI，Codex 迭代 1 就能加）
 
 ```bash
-# ① 目标框架与最低 OS（防"抬门槛"）
-grep -rn "TargetFramework" --include=*.csproj . | grep -v "net10.0-windows$" && echo "FAIL: 目标框架不是 net10.0-windows"
-grep -rn "SupportedOSPlatformVersion" --include=*.csproj . | grep -v "10.0.17763.0" && echo "FAIL: 最低 OS 不是 Win10 1809"
+# ① 目标框架与最低 OS（防"抬门槛"）—— 注意：只有**托盘工程**用 -windows，库与测试必须平台中立
+#    依据：迭代 1 复核 P1-1（库/测试声明 net10.0-windows 会让 Linux/CI 无法构建，已改回 net10.0）
+bad=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2>/dev/null)
+[ -n "$bad" ] && echo "FAIL: 库/测试不该用 -windows 目标框架: $bad"
+need=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Tray 2>/dev/null)
+[ -z "$need" ] && echo "FAIL: 托盘工程必须是 net10.0-windows（否则 Win10 API 无编译期校验）"
+for f in $(grep -rl "net10.0-windows" --include=*.csproj src/LanSync.Tray 2>/dev/null); do
+  grep -q "SupportedOSPlatformVersion>10.0.17763.0" "$f" || echo "FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0"
+done
 
 # ② Win11 专有依赖（防误引入）
 grep -rniE "WindowsAppSDK|Microsoft\.Windows\.AppSDK|Mica|SnapLayout" --include=*.csproj --include=*.cs . && echo "FAIL: 引入 Win11 专有组件"

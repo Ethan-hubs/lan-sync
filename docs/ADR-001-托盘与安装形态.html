@@ -1,0 +1,186 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ADR-001 · 托盘客户端形态、引擎服务化与安装包</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>ADR-001 · 托盘客户端形态、引擎服务化与安装包<span class="badge">tzgj 线开工依据</span></h1><div class="meta">2026-09-15 · WPF 选型 / shawl 服务化 / API key 与权限边界 / Inno Setup 安装步骤 / 托盘↔Adapter 接口边界 / 目录 owner 表</div></div></header>
+<div class="wrap"><main><h1 id="adr-001tzgj">ADR-001：托盘客户端形态、引擎服务化与安装包（tzgj 线开工依据）</h1>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>状态</td>
+<td><strong>已决（主线拍板，2026-09-15）</strong> — tzgj 线可据此开工</td>
+</tr>
+<tr>
+<td>决策者</td>
+<td>主线（hermes 本机线）；依据来自真机实验（<code>docs/M0.5-真机实验结论（Windows+跨网）.md</code>）与迭代 1 复核（<code>docs/独立复核报告-迭代1.md</code>）</td>
+</tr>
+<tr>
+<td>影响面</td>
+<td><code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code>（tzgj 线 owner）</td>
+</tr>
+<tr>
+<td>上游依赖</td>
+<td><code>src/LanSync.Core</code> + <code>src/LanSync.Syncthing</code>（codex 线 owner，已通过零改动复核：单元 22/22、集成 8/8+8/8）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="d1">D1 · 技术栈（拍板）</h2>
+<ul>
+<li><strong>WPF</strong>（<code>net10.0-windows</code> + <code>SupportedOSPlatformVersion=10.0.17763.0</code>），<code>WinExe</code>，托盘常驻。</li>
+<li>托盘图标用 <strong><code>Hardcodet.NotifyIcon.Wpf</code>（MIT）</strong>；若不想引第三方，退化方案是
+  <code>UseWindowsForms=true</code> + <code>System.Windows.Forms.NotifyIcon</code>（同进程内互操作，Win10/Win11 行为一致）。</li>
+<li><strong>不引入 Windows App SDK / WinUI 3</strong>（会同时抬高 OS 门槛与安装体积，且 Win10 上需额外运行时）。</li>
+<li>语言/框架约束见 <code>docs/Win10-Win11-兼容性要求.md</code>（含可自动化的 4 条静态检查）。</li>
+</ul>
+<h2 id="d2">D2 · 引擎形态与服务化（拍板）</h2>
+<p><strong>引擎以 Windows Service 运行，用 <code>shawl</code> 作服务包装器</strong>（不是自己 <code>sc create</code>）。</p>
+<table>
+<thead>
+<tr>
+<th>依据</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>真机实测（真机结论 §5）</td>
+<td><code>sc.exe create</code> 直接包 console 程序 → <code>Start-Process</code> 失败（<code>CouldNotStartService</code>）：SCM 要服务协议汇报，console 程序不满足</td>
+</tr>
+<tr>
+<td>上游生态</td>
+<td><code>Bill-Stewart/SyncthingWindowsSetup</code> 内部即用 <strong><code>shawl.exe</code></strong> 跑 Syncthing 服务，另有 <code>asmt.exe</code> 管服务账号</td>
+</tr>
+<tr>
+<td>会话独立性</td>
+<td>实测裸进程会随 SSH 会话结束被杀；计划任务方式在 WinServer-A 上 <code>LastTaskResult=1</code> 起不来；<strong>服务/计划任务必须由安装脚本以正确路径注册</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>服务账号（拍板）</strong>：创建专用本地账号 <strong><code>LanSyncSvc</code></strong>（非 SYSTEM、非交互登录），授予：
+1. "Log on as a service" 权限；
+2. 同步目录 <strong>Modify</strong>：<code>icacls "&lt;dir&gt;" /grant "LanSyncSvc:(OI)(CI)M" /t</code>；
+3. 会随安装程序创建、卸载时禁用（<strong>不删除</strong>账号，避免影响其它软件）。</p>
+<h2 id="d3-api-key">D3 · API key 与权限边界（拍板，含权衡说明）</h2>
+<p><strong>决定</strong>：API key 存 <code>%ProgramData%\LanSync\api-key.txt</code>，ACL = <code>SYSTEM</code> + <code>Administrators</code> + <code>LanSyncSvc</code> 完全控制、
+本机 <code>Users</code> <strong>只读</strong>；Syncthing GUI 只绑 <code>127.0.0.1:8384</code>。</p>
+<p><strong>为什么不让托盘独占</strong>：引擎以服务身份运行、托盘以人类用户身份运行——两者不同账号，
+若 key 只给服务账号，托盘就读不到（除非托盘提权，UX 不可接受）。
+因此本方案的实际保护边界是：<strong>"防局域网内他人 / 防同机其它非管理员用户"</strong>，
+<strong>不防本机管理员</strong>（管理员本来就能读服务配置、也能直接改 Syncthing 配置）。</p>
+<p><strong>可选增强（不阻塞开工）</strong>：用 <strong>DPAPI（machine 作用域）</strong> 加密 key 文件内容，解密的机器范围不变，
+收益是"文件被复制到别的机器也解不开"；代价是多一层依赖与排障成本。tzgj 线可先按明文+ACL 落地，留 TODO。</p>
+<blockquote>
+<p>这条与 PRD §FR-5.4 的"凭证不落明文"存在<strong>局部让步</strong>，需在 PRD 里如实标注（第二批文档更新时处理）。</p>
+</blockquote>
+<h2 id="d4">D4 · 安装包（拍板）</h2>
+<p><strong>Inno Setup</strong>（单文件 <code>.exe</code>），安装内容与步骤固定为：</p>
+<ol>
+<li>校验并落地 <code>syncthing.exe</code>（<strong>SHA-256 固定值校验</strong>，v2.1.5 <code>/36a0f7bc…f50344</code>，与真机实验一致）；</li>
+<li>落地 <code>shawl.exe</code> + 托盘程序（<code>LanSync.Tray.exe</code>）；</li>
+<li>创建 <code>LanSyncSvc</code> 账号 → 授予 "作为服务登录" → 注册服务（shawl 包 <code>syncthing.exe serve --home …</code>）；</li>
+<li>生成 API key + 写配置文件（ACL 按 D3）；</li>
+<li>交互询问同步目录 → <code>icacls</code> 授权 → 起服务 → 托盘加开机自启（HKCU <code>Run</code>）；</li>
+<li><strong>卸载</strong>：停服务 → 删服务 → 禁账号 → 删程序与配置 → <strong>绝不删除任何用户同步目录</strong>（PRD §6.9）。</li>
+</ol>
+<p><strong>静默安装</strong>：支持 <code>/SILENT</code> 与 <code>/DIR=</code>、<code>/SYNCDIR=</code> 参数（便于自己人批量装）。
+<strong>代码签名</strong>：安装包与两个 exe 都需签名；证书来源属<strong>待项目发起人决策项</strong>（R10 的 P0），未签名前只在自己机器上试装。</p>
+<h2 id="d5-adapter">D5 · 托盘 ↔ Adapter 的接口边界（拍板）</h2>
+<ul>
+<li>托盘<strong>只调用 <code>LanSync.Syncthing</code> 暴露的方法</strong>，<strong>禁止</strong>自己发 Syncthing REST 请求（否则授权/错误处理会双份）。</li>
+<li>当前可用能力（迭代 1 已实现并通过复核）：<code>HealthAsync</code>、<code>Get/SaveConfigurationAsync</code>（安全 GET→改→PUT）、
+  <code>Add/RemoveDeviceAsync</code>、<code>Add/UpdateFolderAsync</code>、<code>Get/SetIgnoresAsync</code>、<code>GetConnectionsAsync</code>
+  （映射为 <code>ConnectionKind.Direct/Relay/Offline/Unknown</code> + paused）、<code>SubscribeEventsAsync</code>、
+  <code>Pause/ResumeAsync</code>、<code>GetFolderErrorsAsync</code>（<strong>只读</strong>，不做清理）。</li>
+<li><strong>本迭代不可用</strong>（等 codex 迭代 2）：版本恢复事务（<code>pause(对端)→restore→判空→finally resume</code>）。
+  ⇒ 托盘的"历史版本"入口<strong>先做只读列表</strong>，恢复按钮先禁用/或留到 C7 完成后接通。</li>
+<li>状态灯映射（唯一允许的"解释"）：<code>Direct→绿</code>、<code>Relay→黄</code>、<code>Offline→红</code>、授权类异常（阶段二）→橙。</li>
+</ul>
+<h2 id="d6-owner">D6 · 目录 owner 表（避免撞车）</h2>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>owner</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/LanSync.Core</code>、<code>src/LanSync.Syncthing</code>、<code>tests/*</code></td>
+<td><strong>codex 线</strong></td>
+<td>迭代 2 范围：C7 恢复事务 + P1-3/P2-4/P2-5/P2-6</td>
+</tr>
+<tr>
+<td><code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code></td>
+<td><strong>tzgj 线</strong></td>
+<td>本 ADR 即其开工依据</td>
+</tr>
+<tr>
+<td><code>docs/</code>、<code>adapter/</code>、<code>m05-toolkit/</code>、<code>scripts/</code>、根文档</td>
+<td><strong>主线</strong></td>
+<td>唯一合并口与发布口</td>
+</tr>
+</tbody>
+</table>
+<p>跨边界改动前先在 <code>lanes.json</code> 台账登记（规则见协作台 <code>https://files.example.com/lanes.html</code>）。</p>
+<hr />
+<h2 id="adr">附：本 ADR 的硬事实来源（改这条前先看这些）</h2>
+<table>
+<thead>
+<tr>
+<th>事实</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sc create</code> 不能直接包 console 程序</td>
+<td>真机结论 §5</td>
+</tr>
+<tr>
+<td>上游用 <code>shawl</code> 跑服务、<code>asmt</code> 管账号</td>
+<td><code>Bill-Stewart/SyncthingWindowsSetup</code> README（实测抓取）</td>
+</tr>
+<tr>
+<td>服务账号需要 "Log on as a service" + 目录 <code>icacls … Modify</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>库/测试不得用 <code>-windows</code> 目标框架</td>
+<td>迭代 1 复核 P1-1（已由 codex 修复并复核关闭）</td>
+</tr>
+<tr>
+<td>恢复必须是三步事务、且响应字典要判空</td>
+<td>真机实验 <code>adapter/exp_restore.py</code> 对照 + G1 契约 §6</td>
+</tr>
+<tr>
+<td><code>fsWatcherDelayS</code> 阶段一建议 1–2s（p50 2.01s/p95 3.09s 实测）</td>
+<td>真机结论 §11</td>
+</tr>
+</tbody>
+</table></main><footer>ADR-001 · 托盘客户端形态、引擎服务化与安装包 · 生成于 2026-09-13</footer></div></body></html>

@@ -1,6 +1,6 @@
 # G1 · Syncthing Adapter 接口约定（v1，2026-09-13）
 
-> 对应《局域网同步系统-产品文档-v0.9(rc)》§2.6 准入条件 G1 与 §6.1.1 职责 7 条。
+> 对应《局域网同步系统-产品文档-v0.10(rc)》§2.6 准入条件 G1 与 §6.1.1 职责 7 条。
 > **本约定的每一条 REST 行为都在本机真机验证过**（Syncthing v2.1.5 + 自建 stdiscosrv/strelaysrv，
 > 见 `adapter/lab.py`、`adapter/net_lab.py`、`local-lab/REPORT.md`）。
 > 参考实现：`adapter/syncthing_adapter.py`（Python，仅用于验证契约；产品语言未定，契约本身语言无关）。

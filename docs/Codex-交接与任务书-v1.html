@@ -89,7 +89,7 @@
 <tr>
 <td>PRD v0.9（实施基线候选 rc）</td>
 <td>✅ 六轮外部评审 P0 已清零</td>
-<td><code>/data/lan-sync/局域网同步系统-产品文档-v0.9.md</code></td>
+<td><code>/data/lan-sync/局域网同步系统-产品文档-v0.10.md</code></td>
 </tr>
 <tr>
 <td>M0.5 操作手册 v0.3</td>
@@ -382,7 +382,7 @@
 - docs/G1-Adapter接口约定.md  ← Adapter 的唯一规格（7 条职责 + 11 条上游事实 + 10 条实测注意点）
 - docs/M0.5-本地实验结论（Linux子集）.md 和 docs/M0.5-真机实验结论（Windows+跨网）.md  ← 全部实测数字与 7 条纠正
 - M0.5-技术基线PoC操作手册-v0.3.md
-- 局域网同步系统-产品文档-v0.9.md 的 §2.4（两层准入）/§2.5（E1–E6）/§2.6（M1 准入 Gate）/§6.1.1（Adapter 职责）/§12.4（上游能力边界）
+- 局域网同步系统-产品文档-v0.10.md 的 §2.4（两层准入）/§2.5（E1–E6）/§2.6（M1 准入 Gate）/§6.1.1（Adapter 职责）/§12.4（上游能力边界）
 - adapter/syncthing_adapter.py（Python 参考实现）+ adapter/lab.py（C1–C9 检查定义）
 
 必须知道的现状（别重复劳动）：
@@ -623,8 +623,15 @@ test(adapter): port C1-C6 contract checks
 <tr>
 <td><strong>1</strong></td>
 <td>Adapter 前四项职责 + events + pause/resume + <code>/rest/folder/errors</code> 只读</td>
-<td><code>2e965a4</code>（<strong>尚未推远端</strong>）</td>
-<td>在我方 Linux + 自建 v2.1.5 实例上<strong>实跑其测试</strong>：单元 22/22、集成 6/6（外部实例）、集成 6/6（自建实例）→ 详见 <code>docs/独立复核报告-迭代1.md</code></td>
+<td><code>2e965a4</code> → 变基后 <code>60393e4</code>（已推远端）</td>
+<td>首轮：单元 22/22、集成 6/6 + 6/6（<strong>改副本才可构建</strong>）；二次（<code>4a812fc</code> 后，<strong>零改动</strong>）：单元 22/22、集成 8/8（外部实例）、8/8（自建·Linux 二进制）、2 passed/6 skipped（无实例）、<code>dotnet format</code> 0 → 详见 <code>docs/独立复核报告-迭代1.md</code></td>
+<td>✅ <strong>通过</strong></td>
+</tr>
+<tr>
+<td><strong>1.1</strong></td>
+<td>复核改进：P1-1 跨平台 TFM、P1-2 哈希按 OS 选择 + 环境变量覆盖</td>
+<td><code>829af00</code>、<code>4a812fc</code>（已推远端）</td>
+<td>零改动复核通过；两项标记<strong>已关闭</strong></td>
 <td>✅ <strong>通过</strong></td>
 </tr>
 <tr>

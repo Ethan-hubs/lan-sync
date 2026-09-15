@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 兼容性静态检查（Win10/Win11 硬约束）
+        run: |
+          set -e
+          echo "① 库/测试不得使用 -windows 目标框架（P1-1）"
+          bad=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2>/dev/null || true)
+          if [ -n "$bad" ]; then echo "FAIL: $bad"; exit 1; fi
+          echo "② 托盘工程必须是 net10.0-windows 且钉住最低 OS 10.0.17763.0（若托盘工程尚未创建则跳过）"
+          if [ -d src/LanSync.Tray ]; then
+            for f in $(grep -rl "net10.0-windows" --include=*.csproj src/LanSync.Tray); do
+              grep -q "SupportedOSPlatformVersion>10.0.17763.0" "$f" || { echo "FAIL: $f 缺 SupportedOSPlatformVersion"; exit 1; }
+            done
+          fi
+          echo "③ 禁止 Win11 专有组件"
+          if grep -rniE "WindowsAppSDK|Microsoft\\.Windows\\.AppSDK|Mica|SnapLayout" --include=*.csproj --include=*.cs . ; then
+            echo "FAIL: 引入了 Win11 专有组件"; exit 1
+          fi
+          echo "④ .ps1 含非 ASCII 时必须带 UTF-8 BOM"
+          fail=0
+          for f in $(grep -rlP "[^\\x00-\\x7F]" --include=*.ps1 . 2>/dev/null || true); do
+            head -c3 "$f" | od -An -tx1 | grep -q "ef bb bf" || { echo "FAIL: $f 缺 BOM"; fail=1; }
+          done
+          [ "$fail" = 0 ]
+
+      - name: 构建
+        run: dotnet build -c Release
+
+      - name: 单元测试
+        run: dotnet test tests/LanSync.Syncthing.Tests -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: 集成测试（无外部实例 → C1–C6 应 skip，不判红）
+        run: |
+          env -u LANSW_TEST_A_GUI -u LANSW_TEST_A_APIKEY -u LANSW_TEST_B_GUI -u LANSW_TEST_B_APIKEY \
+              -u LANSW_SYNCTHING_BIN -u LANSW_SYNCTHING_SHA256 \
+              dotnet test tests/LanSync.IntegrationTests -c Release --no-build
+
+      - name: 代码格式
+        run: dotnet format --verify-no-changes --verbosity quiet

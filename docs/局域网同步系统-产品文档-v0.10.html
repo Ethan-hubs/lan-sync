@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.9</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.10</title>
 <style>
  :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
  body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
@@ -20,7 +20,7 @@
  hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
  footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
 </style></head><body>
-<header class="top"><div class="wrap"><h1>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.9<span class="badge">实施基线候选 rc</span></h1><div class="meta">2026-09-13 · 五轮评审后 P0 清零 · 阶段一＝原生 Syncthing + Adapter + 私有 discovery/relay</div></div></header>
+<header class="top"><div class="wrap"><h1>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.10<span class="badge">实施基线候选 rc</span></h1><div class="meta">2026-09-13 · 五轮评审后 P0 清零 · 阶段一＝原生 Syncthing + Adapter + 私有 discovery/relay</div></div></header>
 <div class="wrap"><main><h1 id="prd">局域网优先 · 云端中转的授权制文件同步系统 — 产品需求文档（PRD）</h1>
 <table>
 <thead>
@@ -32,7 +32,7 @@
 <tbody>
 <tr>
 <td>文档版本</td>
-<td><strong>v0.9（实施基线候选 / rc）</strong>——<strong>M0.5 验证通过后冻结为 v1.0 实施基线</strong>；已过五轮评审并逐轮落痕</td>
+<td><strong>v0.10（实施基线候选 / rc；E5 已实测回填）</strong>——<strong>M0.5 验证通过后冻结为 v1.0 实施基线</strong>；已过五轮评审并逐轮落痕</td>
 </tr>
 <tr>
 <td>变更记录</td>
@@ -1903,86 +1903,71 @@ BEP 会话（含 folder ID、文件名、块哈希）运行在设备间 TLS 之�
 <hr />
 <h2 id="18">18. 验收标准（可测）</h2>
 <blockquote>
-<p><strong>阶段一必过</strong>：第 1、2、3、4、8、10、11 条（第 1 条按 E5 实测口径）；第 12 条在阶段一改为「未持正确 relay <code>-token</code> 的客户端连不上私有 relay（relay 使用准入）；而未被互加 Device ID 的设备即使拿到 token 也看不到任何文件（同步成员准入）——两层分开验」。
+<p><strong>v0.10（2026-09-15）</strong>：E5 已在<strong>真机（阿里云中继 + NAT 后 Windows）</strong>测完，本条据此从"待实测"升级为<strong>硬指标</strong>，见 §18.1。
+<strong>阶段一必过</strong>：第 1、2、3、4、8、10、11 条（第 1 条按 §18.1 的硬口径）；第 12 条在阶段一改为「未持正确 relay <code>-token</code> 的客户端连不上私有 relay（relay 使用准入）；而未被互加 Device ID 的设备即使拿到 token 也看不到任何文件（同步成员准入）——两层分开验」。
 <strong>阶段二验收</strong>：第 5、6、7、9、13 条（授权宽限、后台吊销、离线 .lic、时间回拨、中继层即时断流）。</p>
 </blockquote>
 <ol>
-<li>同网段两台设备：新增/修改/删除/重命名 4 类操作，<strong>记录各自的 P50/P95 实测值</strong>（E5），并按下表判定（<strong>局域网同步期间"经 Relay 的文件负载公网流量 = 0"</strong>——注意不是"ECS 总公网流量 = 0"：客户端仍会向 <code>stdiscosrv</code> 宣布/查询地址，这部分 discovery 元数据流量不计入本条）（<strong>v0.8 给出阈值，否则本条没有判定力</strong>）：</li>
+<li>同网段两台设备：新增/修改/删除/重命名 4 类操作，<strong>P95 ≤ 3 s</strong>（产品默认 <code>fsWatcherDelayS = 1</code>；见 §18.1 的实测依据）。
+   <strong>局域网同步期间"经 Relay 的文件负载公网流量 = 0"</strong>——注意不是"ECS 总公网流量 = 0"：客户端仍会向 <code>stdiscosrv</code> 宣布/查询地址，
+   这部分 discovery 元数据流量不计入本条。删除/重命名允许更宽松，但<strong>必须记录实测值</strong>。</li>
+<li>20GB / 5 万文件首次同步：不丢文件、不产生重复文件、支持断点续传。</li>
+<li>拔网线 5 分钟后恢复：自动补齐，无重复传输，无异常冲突副本。</li>
+<li>跨网（家中 → 公司）：无需任何手动配置即自动建立连接（能直连则直连，否则回落 relay）。<strong>具体秒数按 E6 实测后确定的 SLA 判定</strong>——此前写的"5 秒"未经验证，已撤为待定（v0.9）。</li>
+<li>授权到期：进入宽限期提示明确，宽限期满按配置降级，<strong>任何情况下不删用户数据</strong>。</li>
+<li>后台吊销设备：5 分钟内该设备停止同步且提示原因。</li>
+<li>隔离内网：导入 <code>.lic</code> 后可完整同步，无公网依赖。</li>
+<li>双端并发修改同一文件：产生冲突副本，原文件不丢，两个版本均可打开。</li>
+<li>系统时间回拨 24 小时：授权状态不被延长，进入宽限倒计时。</li>
+<li>卸载客户端：不残留同步文件、不留后台上传进程。</li>
+<li>版本恢复（按 Syncthing 原生语义，v0.9 重写）：在<strong>确有该版本归档</strong>的设备上，用 UI 选择版本并恢复成功；恢复后该文件按正常变更重新同步到其它设备；<strong>不承诺"任一设备恢复任意版本"</strong>，也不承诺"另存为新文件名"。</li>
+<li>把中继凭证复制到另一台设备使用：relay 握手被拒（凭证绑定 Device ID）。</li>
+<li>后台吊销设备后：该设备在<strong>中继层 ≤5 分钟</strong>断流（不只是本地停止同步）。</li>
 </ol>
+<h3 id="181-e5-2026-09-14">18.1 E5 实测依据（真机，2026-09-14）</h3>
+<p>拓扑：Azure 实例 → <strong>自建阿里云中继 <code>relay.example.com:22067</code></strong> → 家庭宽带 NAT 后的 Windows 11 机器（Desktop-B）。
+采集：接收端 <code>FileSystemWatcher</code>，时间戳取 <code>$Event.TimeGenerated</code>；采集器派发滞后中位数 274–777 ms（数据可信）。</p>
 <table>
 <thead>
 <tr>
-<th>实测 P95（新增/修改）</th>
-<th>判定</th>
+<th>场景</th>
+<th>两端 <code>fsWatcherDelayS</code></th>
+<th>样本</th>
+<th>p50</th>
+<th>p95</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>≤ 3s</strong></td>
-<td>✅ 达标</td>
+<td>经自建中继（Syncthing 默认配置）</td>
+<td><strong>10</strong></td>
+<td>20/20</td>
+<td>11.56 s</td>
+<td><strong>15.61 s</strong></td>
 </tr>
 <tr>
-<td><strong>3–10s</strong></td>
-<td>⚠️ 可接受，但须在报告里写明原因（如 <code>fsWatcherDelayS</code> 默认 10s）与是否调优</td>
+<td>经自建中继（<strong>产品建议默认值</strong>）</td>
+<td><strong>1</strong></td>
+<td>20/20</td>
+<td>2.01 s</td>
+<td><strong>3.09 s</strong></td>
 </tr>
 <tr>
-<td><strong>&gt; 10s</strong></td>
-<td>❌ 不达标，必须给出缓解措施（调小 <code>fsWatcherDelayS</code> / 客户端事件后主动触发 scan / 明确该项为"最终一致"并写入验收标准）</td>
-</tr>
-<tr>
-<td>删除/重命名单列，允许更宽松，但<strong>必须记录实测值</strong>。服务端公网流量为 0。</td>
-<td></td>
-</tr>
-<tr>
-<td>2. 20GB / 5 万文件首次同步：不丢文件、不产生重复文件、支持断点续传。</td>
-<td></td>
-</tr>
-<tr>
-<td>3. 拔网线 5 分钟后恢复：自动补齐，无重复传输，无异常冲突副本。</td>
-<td></td>
-</tr>
-<tr>
-<td>4. 跨网（家中 → 公司）：无需任何手动配置即自动建立连接（能直连则直连，否则回落 relay）。<strong>具体秒数按 E6 实测后确定的 SLA 判定</strong>——此前写的"5 秒"未经验证，已撤为待定（v0.9）。</td>
-<td></td>
-</tr>
-<tr>
-<td>5. 授权到期：进入宽限期提示明确，宽限期满按配置降级，<strong>任何情况下不删用户数据</strong>。</td>
-<td></td>
-</tr>
-<tr>
-<td>6. 后台吊销设备：5 分钟内该设备停止同步且提示原因。</td>
-<td></td>
-</tr>
-<tr>
-<td>7. 隔离内网：导入 <code>.lic</code> 后可完整同步，无公网依赖。</td>
-<td></td>
-</tr>
-<tr>
-<td>8. 双端并发修改同一文件：产生冲突副本，原文件不丢，两个版本均可打开。</td>
-<td></td>
-</tr>
-<tr>
-<td>9. 系统时间回拨 24 小时：授权状态不被延长，进入宽限倒计时。</td>
-<td></td>
-</tr>
-<tr>
-<td>10. 卸载客户端：不残留同步文件、不留后台上传进程。</td>
-<td></td>
-</tr>
-<tr>
-<td>11. 版本恢复（按 Syncthing 原生语义，v0.9 重写）：在<strong>确有该版本归档</strong>的设备上，用 UI 选择版本并恢复成功；恢复后该文件按正常变更重新同步到其它设备；<strong>不承诺"任一设备恢复任意版本"</strong>，也不承诺"另存为新文件名"。</td>
-<td></td>
-</tr>
-<tr>
-<td>12. 把中继凭证复制到另一台设备使用：relay 握手被拒（凭证绑定 Device ID）。</td>
-<td></td>
-</tr>
-<tr>
-<td>13. 后台吊销设备后：该设备在<strong>中继层 ≤5 分钟</strong>断流（不只是本地停止同步）。</td>
-<td></td>
+<td>参考：跨网<strong>直连</strong>（两台有公网 IP 的机器）</td>
+<td>10</td>
+<td>—</td>
+<td>~2–3 s</td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
+<p><strong>因此</strong>：① "3 秒"不再是"目标 vs 现实"的争论，而是<strong>可达并被实测支撑的硬指标</strong>；
+② 产品默认 <code>fsWatcherDelayS</code> 取 <strong>1–2 秒</strong>（默认 10 秒是 p50 11.6 s 的直接原因）；
+③ 时延必须在<strong>队列空闲</strong>下测——注入速率超过中继吞吐时，队列会累积（实测同一组从 6.6 s 单调爬到 16.1 s）。
+④ 与之对照的<strong>吞吐天花板</strong>：经该中继实测 <strong>1.23 Mbps</strong>（裸链路 3.34 Mbps）⇒ 大文件跨网不能指望中继，须靠直连（见 §13 与真机结论 §10.7）。</p>
+<blockquote>
+<p>原始逐条毫秒值：<code>local-lab/e5-wan-aliyun.json</code>；复现：<code>LANSW_E5_TARGET=Desktop-B python3 adapter/wan_e5b.py 20 &lt;tag&gt;</code>。</p>
+</blockquote>
 <hr />
 <h2 id="19-glm-52-2026-09-13">19. 评审修订记录（GLM-5.2 评审，2026-09-13）</h2>
 <p>本节记录外部评审（硅基流动 GLM-5.2，3 轮往复）达成的修订；<strong>完整对话见附录 C</strong>。11 条修订已全部落入 v0.4。<strong>注意：修订完成 ≠ 可开工</strong>——开工门槛见 §2.6。</p>
@@ -4115,4 +4100,4 @@ python3 chat.py zai-org/GLM-5.2 round3_prompt.md round3 --no-appendix
 </tbody>
 </table>
 <p><strong>附件清单（<code>/data/lan-sync/attachments/</code>）</strong>：<code>GitHub开源项目调研-2026-09-13.md</code>、<code>产品文档评审交流记录-GLM-5.2-2026-09-13.md</code>
-—— 需要单独转发给同事时直接取这两份。</p></main><footer>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.9 · 生成于 2026-09-13</footer></div></body></html>
+—— 需要单独转发给同事时直接取这两份。</p></main><footer>局域网优先 · 云端中继的授权制文件同步系统 — 产品文档 v0.10 · 生成于 2026-09-13</footer></div></body></html>

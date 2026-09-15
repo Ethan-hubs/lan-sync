@@ -68,13 +68,19 @@
 <p>结论：产品说明写「<strong>Windows 11 全版本 + Windows 10 LTSC/Enterprise（1809 起）+ Windows Server 2016 起</strong>」，
 不要笼统写"支持 Windows 10/11"。</p>
 </blockquote>
-<h2 id="2">2. 目标框架（一条容易致命的选择）</h2>
+<h2 id="2-windows">2. 目标框架（分两层：库/测试平台中立，只有托盘工程带 -windows）</h2>
+<p><strong>库与测试工程</strong>（<code>LanSync.Core</code> / <code>LanSync.Syncthing</code> / <code>tests/*</code>）：</p>
+<pre><code class="language-xml">&lt;TargetFramework&gt;net10.0&lt;/TargetFramework&gt;          &lt;!-- 平台中立：Linux/CI 也能构建与复核 --&gt;
+</code></pre>
+<p><strong>托盘工程</strong>（<code>LanSync.Tray</code>，唯一带 Windows 目标的工程）：</p>
 <pre><code class="language-xml">&lt;TargetFramework&gt;net10.0-windows&lt;/TargetFramework&gt;
 &lt;SupportedOSPlatformVersion&gt;10.0.17763.0&lt;/SupportedOSPlatformVersion&gt;   &lt;!-- Win10 1809 --&gt;
 &lt;UseWPF&gt;true&lt;/UseWPF&gt;
 </code></pre>
 <ul>
 <li>❌ <strong>不要</strong>写 <code>net10.0-windows10.0.22000.0</code>（或更高）——那是 Win11 的目标框架，会把最低系统要求直接抬到 Win11。</li>
+<li>❌ <strong>不要</strong>给库或测试工程加 <code>-windows</code>（迭代 1 复核 P1-1 实测：会让 Linux/CI 无法构建，零改动复核就此不可能）。
+  只有托盘工程需要 <code>-windows</code>，因为只有它调用 Windows 专有 API（DPAPI / NotifyIcon）。</li>
 <li>❌ 不要用 <code>TargetPlatformMinVersion</code> 替代 <code>SupportedOSPlatformVersion</code>（前者不给编译期警告）。</li>
 <li>✅ 需要调用较新 API 时，用 <code>[SupportedOSPlatform("windows10.0.xxxxx")]</code> 标注 + 运行时判断，别整体抬版本。</li>
 </ul>
@@ -174,9 +180,15 @@
 ② 至少做一次"目标框架/API/脚本语法"的静态审查（见 §8）。</p>
 </blockquote>
 <h2 id="8-cicodex-1">8. 可自动化检查的清单（建议接进 CI，Codex 迭代 1 就能加）</h2>
-<pre><code class="language-bash"># ① 目标框架与最低 OS（防&quot;抬门槛&quot;）
-grep -rn &quot;TargetFramework&quot; --include=*.csproj . | grep -v &quot;net10.0-windows$&quot; &amp;&amp; echo &quot;FAIL: 目标框架不是 net10.0-windows&quot;
-grep -rn &quot;SupportedOSPlatformVersion&quot; --include=*.csproj . | grep -v &quot;10.0.17763.0&quot; &amp;&amp; echo &quot;FAIL: 最低 OS 不是 Win10 1809&quot;
+<pre><code class="language-bash"># ① 目标框架与最低 OS（防&quot;抬门槛&quot;）—— 注意：只有**托盘工程**用 -windows，库与测试必须平台中立
+#    依据：迭代 1 复核 P1-1（库/测试声明 net10.0-windows 会让 Linux/CI 无法构建，已改回 net10.0）
+bad=$(grep -rl &quot;TargetFramework&gt;net10.0-windows&quot; --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2&gt;/dev/null)
+[ -n &quot;$bad&quot; ] &amp;&amp; echo &quot;FAIL: 库/测试不该用 -windows 目标框架: $bad&quot;
+need=$(grep -rl &quot;TargetFramework&gt;net10.0-windows&quot; --include=*.csproj src/LanSync.Tray 2&gt;/dev/null)
+[ -z &quot;$need&quot; ] &amp;&amp; echo &quot;FAIL: 托盘工程必须是 net10.0-windows（否则 Win10 API 无编译期校验）&quot;
+for f in $(grep -rl &quot;net10.0-windows&quot; --include=*.csproj src/LanSync.Tray 2&gt;/dev/null); do
+  grep -q &quot;SupportedOSPlatformVersion&gt;10.0.17763.0&quot; &quot;$f&quot; || echo &quot;FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0&quot;
+done
 
 # ② Win11 专有依赖（防误引入）
 grep -rniE &quot;WindowsAppSDK|Microsoft\.Windows\.AppSDK|Mica|SnapLayout&quot; --include=*.csproj --include=*.cs . &amp;&amp; echo &quot;FAIL: 引入 Win11 专有组件&quot;
