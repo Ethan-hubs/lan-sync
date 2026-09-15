@@ -12,8 +12,10 @@
 ; changes the machine-level registry value.
 ;
 ; §14(4) autostart is NOT written here (elevated HKCU would hit the admin hive); the tray
-; writes/verifies its own HKCU Run entry on first launch. Uninstall cleans it via
-; runasoriginaluser (see [UninstallRun]).
+; writes/verifies its own HKCU Run entry on first launch. Uninstall cleans it in [UninstallRun]
+; for the *invoking* user's hive — note: `runasoriginaluser` is NOT supported in [UninstallRun]
+; (verified: iscc 6.7.3 rejects it), so if the uninstaller was elevated with *another* admin
+; account the stale Run entry survives and is healed by the tray on next launch.
 ;
 ; Compile with: iscc packaging\setup.iss
 
@@ -43,7 +45,9 @@ WizardStyle=modern
 ; inside {app} and must never be treated as an installed file, so it survives uninstall.
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
+; 简体中文语言文件随仓库自带（stock Inno Setup 安装包不含它，iscc 实测会 "Couldn't open include file"）
+Name: "chinesesimp"; MessagesFile: "languages\ChineseSimplified.isl"
 
 [Files]
 ; Tray publish artifact (dotnet publish -c Release -r win-x64 -> packaging\bin\tray).
@@ -69,7 +73,7 @@ Filename: "powershell.exe"; \
 ; logged-on user's hive, not the elevated one). The tray entry is written by the tray itself.
 Filename: "powershell.exe"; \
     Parameters: "-NoProfile -Command Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'LanSync' -ErrorAction SilentlyContinue"; \
-    Flags: runhidden runasoriginaluser
+    Flags: runhidden
 
 [Code]
 var
@@ -98,9 +102,19 @@ begin
     Result := '';
 end;
 
+function HasPurgeSwitch(): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/PURGE') = 0 then
+      Result := True;
+end;
+
 function InitializeUninstall(): Boolean;
 begin
-  PurgeRequested := Pos('/PURGE', UpperCase(GetCommandLineTail())) > 0;
+  PurgeRequested := HasPurgeSwitch();
   Result := True;
 end;
 
