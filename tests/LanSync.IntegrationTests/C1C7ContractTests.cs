@@ -225,6 +225,40 @@ public sealed class C1C7ContractTests
         Assert.IsTrue((await pair.B.WaitForConnectionAsync(pair.IdA, TimeSpan.FromSeconds(60))).Connected);
     }
 
+    [TestMethod]
+    public async Task C7_negative_restore_without_pausing_peer_is_overwritten()
+    {
+        var pair = RequirePair();
+        var fileName = $"c7-negative-{Guid.NewGuid():N}.txt";
+        var source = Path.Combine(pair.FolderA, fileName);
+        var target = Path.Combine(pair.FolderB, fileName);
+
+        LongPath.WriteAllText(source, "v1");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(60));
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        LongPath.WriteAllText(source, "v2");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v2", TimeSpan.FromSeconds(60));
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        var versions = await pair.B.GetVersionsAsync(pair.FolderId, fileName);
+        Assert.IsTrue(versions.TryGetValue(fileName, out var archived));
+        Assert.IsNotEmpty(archived);
+
+        var response = await pair.B.RestoreVersionRawAsync(pair.FolderId, fileName, archived[0].VersionTime);
+        Assert.IsInstanceOfType(response, typeof(System.Text.Json.Nodes.JsonObject));
+        Assert.IsEmpty((System.Text.Json.Nodes.JsonObject)response!);
+
+        // The REST call reports success, but an online peer's newer change overwrites the
+        // restored version. This is the regression guard for the mandatory pause step.
+        LongPath.WriteAllText(source, "v2-remote");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v2-remote", TimeSpan.FromSeconds(30));
+        await pair.WaitForFileAsync(source, "v2-remote", TimeSpan.FromSeconds(15));
+    }
+
     private static SyncthingPair RequirePair()
     {
         if (_pair is null)

@@ -44,6 +44,19 @@ public sealed class ConnectionsEventsPauseTests
     }
 
     [TestMethod]
+    public async Task Invalid_connection_device_key_is_skipped_and_recorded()
+    {
+        var (adapter, handler) = TestAdapter.Create();
+        handler.EnqueueJson("{\"connections\":{\"not-a-device\":{\"connected\":true,\"type\":\"tcp-client\"},\"AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA\":{\"connected\":false}}}");
+
+        var connections = await adapter.GetConnectionsAsync();
+
+        Assert.HasCount(1, connections);
+        Assert.HasCount(1, adapter.LastConnectionWarnings);
+        StringAssert.Contains(adapter.LastConnectionWarnings[0], "not-a-device");
+    }
+
+    [TestMethod]
     public async Task Events_include_since_and_parse_payload()
     {
         var (adapter, handler) = TestAdapter.Create();

@@ -1,3 +1,9 @@
 namespace LanSync.Core;
 
-public sealed record VersionRestoreResult(IReadOnlyList<DeviceId> PausedDevices);
+public sealed record VersionRestoreResult(
+    string FolderId,
+    string RelativePath,
+    string VersionTime,
+    IReadOnlyList<DeviceId> PausedDevices,
+    IReadOnlyList<DeviceId> ResumedDevices,
+    bool Succeeded);

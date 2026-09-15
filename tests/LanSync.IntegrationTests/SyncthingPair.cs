@@ -15,6 +15,7 @@ internal sealed class SyncthingPair : IAsyncDisposable
     private const string RequiredLinuxSha256 = "ab0ea5f307101e5aa1b4c599164cfc2cc62bddcb8f53e1b3204fc77ac54ce07f";
     private readonly List<Process> _processes = [];
     private readonly List<HttpClient> _clients = [];
+    private readonly List<(SyncthingAdapter Adapter, DeviceId DeviceId)> _addedDevices = [];
     private readonly bool _ownsProcesses;
 
     private SyncthingPair(
@@ -92,10 +93,21 @@ internal sealed class SyncthingPair : IAsyncDisposable
         {
             await B.DeleteFolderAsync(FolderId);
         }
+
         catch (Exception)
         {
         }
 
+        foreach (var (adapter, deviceId) in _addedDevices)
+        {
+            try
+            {
+                await adapter.DeleteDeviceAsync(deviceId);
+            }
+            catch (Exception)
+            {
+            }
+        }
         if (_ownsProcesses)
         {
             foreach (var process in _processes)
@@ -210,9 +222,25 @@ internal sealed class SyncthingPair : IAsyncDisposable
         await pair.A.RestartIfRequiredAsync(TimeSpan.FromSeconds(60));
         await pair.B.RestartIfRequiredAsync(TimeSpan.FromSeconds(60));
 
-        await pair.A.AddDeviceAsync(pair.IdB, "integration-B", [$"tcp://127.0.0.1:{syncPortB}"]);
-        await pair.B.AddDeviceAsync(pair.IdA, "integration-A", [$"tcp://127.0.0.1:{syncPortA}"]);
+        await pair.AddDeviceIfMissingAsync(pair.A, pair.IdB, "integration-B", [$"tcp://127.0.0.1:{syncPortB}"]);
+        await pair.AddDeviceIfMissingAsync(pair.B, pair.IdA, "integration-A", [$"tcp://127.0.0.1:{syncPortA}"]);
         return pair;
+    }
+
+    private async Task AddDeviceIfMissingAsync(
+        SyncthingAdapter adapter,
+        DeviceId deviceId,
+        string name,
+        IReadOnlyList<string> addresses)
+    {
+        var devices = await adapter.GetDevicesAsync();
+        var exists = devices.OfType<JsonObject>().Any(device =>
+            string.Equals(device["deviceID"]?.GetValue<string>(), deviceId.Value, StringComparison.OrdinalIgnoreCase));
+        if (!exists)
+        {
+            await adapter.AddDeviceAsync(deviceId, name, addresses);
+            _addedDevices.Add((adapter, deviceId));
+        }
     }
 
     private static SyncthingPair CreateAdapters(
