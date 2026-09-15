@@ -1,8 +1,9 @@
 ﻿#requires -Version 5.1
-# LanSync 引擎部署脚本（阶段一骨架）
-# 依据：ADR-001 §5（密钥位置）、§9（服务化）、§10（安装步骤）
-# 服务名 LanSyncEngine / 专用账号 LanSyncSvc（非 SYSTEM、非交互登录）/ shawl 包装
+# LanSync 引擎部署脚本（阶段一骨架，第三批收口）
+# 依据：ADR-001 §5（密钥位置）、§9（服务化）、§10（安装步骤）、§14（第三批要求）
+# 服务名 LanSyncEngine / 虚拟服务账号 NT SERVICE\LanSyncEngine（无口令、无需登录权限）/ shawl 包装
 # 由 Inno Setup 安装器在提权上下文调用；产物与失败信息写 %ProgramData%\LanSync\logs\install.log
+# 注：开机自启不在本脚本写 HKCU\Run（提权上下文会落到管理员配置单元），由托盘首启自写（§14(4)）。
 
 [CmdletBinding()]
 param(
@@ -13,7 +14,6 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ServiceName     = 'LanSyncEngine'
-$ServiceAccount  = 'LanSyncSvc'
 $EngineHome      = Join-Path $ProgramDataDir 'engine'
 $ApiKeyFile      = Join-Path $ProgramDataDir 'api-key.txt'
 $LogDir          = Join-Path $ProgramDataDir 'logs'
@@ -24,6 +24,9 @@ $SyncthingSha256 = '36a0f7bc372f64fa7cc4f5654fa324c0dd9f7fef2e07565e00c6e1cf73f5
 $InstallDir    = $PSScriptRoot
 $SyncthingExe  = Join-Path $InstallDir 'bin\syncthing.exe'
 $ShawlExe      = Join-Path $InstallDir 'bin\shawl.exe'
+
+# 虚拟服务账号：SCM 按服务名自动派生，无需口令、无需「作为服务登录」、卸载删服务即回收。
+$ServiceIdentity = 'NT SERVICE\{0}' -f $ServiceName
 
 function Write-Step {
     param([string]$Message)
@@ -46,10 +49,20 @@ function Resolve-SyncDir {
     return $Candidate.Trim()
 }
 
-# §9 依赖安装：.NET Desktop Runtime 检测（托盘 exe 需要）；缺失时提示并提供离线包路径。
+# §14(3)：.NET Desktop Runtime 精确检测（扫 %ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App\10.*）。
 function Test-DotnetDesktopRuntime {
-    # 简化探测：注册表 NDP 只覆盖 .NET Framework 4.x，.NET 10 Desktop Runtime 的精确检测待补。
-    Write-Step '依赖检测：.NET Desktop Runtime 检测为骨架占位，需按实际版本补齐。'
+    $root = Join-Path $env:ProgramFiles 'dotnet\shared\Microsoft.WindowsDesktop.App'
+    $found = @()
+    if (Test-Path $root) {
+        $found = @(Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like '10.*' })
+    }
+    if ($found.Count -gt 0) {
+        Write-Step ("检测到 .NET Desktop Runtime：{0}" -f ($found.Name -join ', '))
+        return
+    }
+    # 缺失：给出离线包路径并要求确认（阻断，不静默继续）。
+    throw '未检测到 .NET Desktop Runtime 10.x。请先安装对应离线包（离线包路径待发布流水线提供，TODO）。'
 }
 
 function Assert-SyncthingHash {
@@ -62,50 +75,36 @@ function Assert-SyncthingHash {
     Write-Step "syncthing.exe SHA-256 校验通过：$actual"
 }
 
-function New-ServiceAccount {
-    # 专用本地账号（非 SYSTEM、非交互登录）。密码随机生成，卸载时只禁用不删除。
-    $exists = Get-LocalUser -Name $ServiceAccount -ErrorAction SilentlyContinue
-    if ($null -eq $exists) {
-        $password = ([Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N'))
-        New-LocalUser -Name $ServiceAccount -Password (ConvertTo-SecureString $password -AsPlainText -Force) `
-            -Description 'LanSync 引擎专用服务账号' -PasswordNeverExpires | Out-Null
-        Write-Step "已创建本地账号 $ServiceAccount"
-    }
-    else {
-        Write-Step "本地账号 $ServiceAccount 已存在，跳过创建"
-    }
-}
-
-function Grant-LogonAsService {
-    # 授予「作为服务登录」权限。骨架先经 secedit 导入；也可用 ntrights.exe / LsaAddAccountRights。
-    Write-Step "授予 $ServiceAccount 「作为服务登录」为骨架占位（secedit / ntrights，待接入）。"
-}
-
 function Register-Service {
-    # shawl 包装 syncthing.exe；服务账号切到 LanSyncSvc（下一条 TODO）。
+    # shawl 包装 syncthing.exe；随后把服务账号切到虚拟服务账号 NT SERVICE\LanSyncEngine。
     & $ShawlExe add $ServiceName -- $SyncthingExe serve --home $EngineHome --no-browser --no-restart
     if ($LASTEXITCODE -ne 0) {
         throw "shawl 注册服务失败，退出码 $LASTEXITCODE"
     }
-    # TODO：sc.exe config LanSyncEngine obj= ".\LanSyncSvc" password= ... 切服务账号。
-    Write-Step "已用 shawl 注册服务 $ServiceName"
+    & sc.exe config $ServiceName obj= ('NT SERVICE\{0}' -f $ServiceName) | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "sc.exe 配置服务账号失败，退出码 $LASTEXITCODE"
+    }
+    Write-Step "已用 shawl 注册服务 $ServiceName，账号 $ServiceIdentity"
 }
 
 function New-ApiKey {
-    # API key 写 %ProgramData%\LanSync\api-key.txt；ACL 按 §5。
+    # API key 写 %ProgramData%\LanSync\api-key.txt；ACL 按 §5/§14(2)。
     if (-not (Test-Path $ApiKeyFile)) {
         $key = ([Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N'))
         Set-Content -Path $ApiKeyFile -Value $key -Encoding ASCII -NoNewline
     }
-    Write-Step "API key 已就绪：$ApiKeyFile"
-    # TODO：icacls 设置 ACL（SYSTEM/Administrators/LanSyncSvc 完全控制，Users 只读）。
+    # ACL：SYSTEM/Administrators 完全控制、NT SERVICE\LanSyncEngine 读、本机 Users 只读。
+    & icacls $ApiKeyFile /inheritance:r | Out-Null
+    & icacls $ApiKeyFile /grant 'SYSTEM:(F)' 'BUILTIN\Administrators:(F)' "${ServiceIdentity}:(R)" 'BUILTIN\Users:(R)' | Out-Null
+    Write-Step "API key 已就绪并设置 ACL：$ApiKeyFile"
 }
 
 function Set-SyncDirAcl {
     param([string]$Dir)
-    # §9 ②：同步目录给账号 Modify 权限。
-    & icacls $Dir /grant "${ServiceAccount}:(OI)(CI)M" /t | Out-Null
-    Write-Step "同步目录 ACL 已授权（$Dir -> $ServiceAccount Modify）"
+    # §9 ②：同步目录给虚拟服务账号 Modify 权限。
+    & icacls $Dir /grant "${ServiceIdentity}:(OI)(CI)M" /t | Out-Null
+    Write-Step "同步目录 ACL 已授权（$Dir -> $ServiceIdentity Modify）"
 }
 
 function Start-EngineService {
@@ -119,16 +118,7 @@ function Start-EngineService {
     Write-Step "服务 $ServiceName 已启动"
 }
 
-function Enable-Autostart {
-    # 托盘开机自启：HKCU Run。
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    New-Item -Path $runKey -Force | Out-Null
-    $trayExe = Join-Path $InstallDir 'LanSync.Tray.exe'
-    Set-ItemProperty -Path $runKey -Name 'LanSync' -Value ('"{0}"' -f $trayExe)
-    Write-Step '已写入 HKCU Run 开机自启'
-}
-
-# ===== 主流程（按 ADR §10 步骤 1–5）=====
+# ===== 主流程（按 ADR §10 步骤 1–5，§14 收口）=====
 try {
     New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
     New-Item -Path $EngineHome -ItemType Directory -Force | Out-Null
@@ -142,13 +132,10 @@ try {
 
     Test-DotnetDesktopRuntime
     Assert-SyncthingHash $SyncthingExe
-    New-ServiceAccount
-    Grant-LogonAsService
     Register-Service
     New-ApiKey
     Set-SyncDirAcl $SyncDir
     Start-EngineService
-    Enable-Autostart
 
     Write-Step '===== LanSync 安装完成 ====='
 }

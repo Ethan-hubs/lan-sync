@@ -1,17 +1,18 @@
 ﻿#requires -Version 5.1
-# LanSync 卸载脚本（阶段一骨架）
-# 依据：ADR-001 §9（卸载禁用不删除账号）、§10（卸载绝不删除用户同步目录）
-# 仅停服务、删服务、禁账号、清理程序与配置；绝不触碰任何用户同步目录。
+# LanSync 卸载脚本（阶段一骨架，第三批收口）
+# 依据：ADR-001 §9（卸载删服务即回收虚拟账号）、§10（卸载绝不删除用户同步目录）、§14(6)（卸载保身份）
+# 停服务、删服务、清理程序配置；默认保留引擎身份两件套（cert.pem/key.pem，Device ID 稳定），
+# /PURGE 开关可彻底清除。绝不触碰任何用户同步目录。
 
 [CmdletBinding()]
 param(
+    [switch]$Purge,
     [string]$ProgramDataDir = "$env:ProgramData\LanSync"
 )
 
 $ErrorActionPreference = 'Stop'
 
 $ServiceName    = 'LanSyncEngine'
-$ServiceAccount = 'LanSyncSvc'
 $InstallDir     = $PSScriptRoot
 $LogDir         = Join-Path $ProgramDataDir 'logs'
 $LogFile        = Join-Path $LogDir 'uninstall.log'
@@ -33,7 +34,7 @@ function Stop-EngineService {
 }
 
 function Remove-EngineService {
-    # 优先用 shawl 删除；shawl 不在则回退 sc.exe delete。
+    # 优先用 shawl 删除；shawl 不在则回退 sc.exe delete。虚拟账号随服务删除自动回收。
     if (Test-Path $ShawlExe) {
         & $ShawlExe remove $ServiceName
     }
@@ -43,22 +44,30 @@ function Remove-EngineService {
     Write-Step "已删除服务 $ServiceName"
 }
 
-function Disable-ServiceAccount {
-    # §9 ③：卸载时禁用不删除账号。
-    $user = Get-LocalUser -Name $ServiceAccount -ErrorAction SilentlyContinue
-    if ($null -ne $user) {
-        Disable-LocalUser -Name $ServiceAccount
-        Write-Step "已禁用账号 $ServiceAccount（保留不删除）"
-    }
-}
-
 function Remove-ProgramData {
-    # 清理程序配置（api-key.txt、engine home）；日志目录保留以便排障。
+    param([bool]$Purge)
     $apiKey = Join-Path $ProgramDataDir 'api-key.txt'
     $engine = Join-Path $ProgramDataDir 'engine'
-    if (Test-Path $apiKey) { Remove-Item -Path $apiKey -Force }
-    if (Test-Path $engine)  { Remove-Item -Path $engine -Recurse -Force }
-    Write-Step '已清理程序配置（API key / engine home）'
+
+    if (Test-Path $apiKey) {
+        Remove-Item -Path $apiKey -Force
+        Write-Step '已删除 api-key.txt'
+    }
+
+    if (Test-Path $engine) {
+        if ($Purge) {
+            Remove-Item -Path $engine -Recurse -Force
+            Write-Step '已彻底清除 engine 目录（含身份两件套 cert.pem/key.pem）'
+        }
+        else {
+            # 默认保留 cert.pem + key.pem（Device ID 稳定），删其余（含 config.xml，folder 定义重装后重建）。
+            $keep = @('cert.pem', 'key.pem')
+            Get-ChildItem -Path $engine -Force |
+                Where-Object { $keep -notcontains $_.Name } |
+                Remove-Item -Recurse -Force
+            Write-Step '已清理 engine 配置（保留身份两件套 cert.pem/key.pem）'
+        }
+    }
 }
 
 try {
@@ -67,8 +76,7 @@ try {
 
     Stop-EngineService
     Remove-EngineService
-    Disable-ServiceAccount
-    Remove-ProgramData
+    Remove-ProgramData $Purge
 
     Write-Step '===== LanSync 卸载完成（未触碰任何用户同步目录）====='
 }

@@ -14,6 +14,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        AutoStart.EnsureInitialized();
+
         _mainWindow = new MainWindow();
         _notifyIcon = CreateNotifyIcon();
         _mainWindow.Show();
@@ -28,6 +30,16 @@ public partial class App : Application
     private Forms.NotifyIcon CreateNotifyIcon()
     {
         var menu = new Forms.ContextMenuStrip();
+
+        var autoStartItem = new Forms.ToolStripMenuItem("开机自启")
+        {
+            Checked = AutoStart.IsEnabled(),
+            CheckOnClick = true,
+        };
+        autoStartItem.CheckedChanged += (_, _) => AutoStart.SetEnabled(autoStartItem.Checked);
+        menu.Items.Add(autoStartItem);
+
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("打开主窗口", null, (_, _) => ShowMainWindow());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => Shutdown());
