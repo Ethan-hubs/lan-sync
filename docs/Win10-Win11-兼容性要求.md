@@ -35,11 +35,12 @@
 **托盘工程**（`LanSync.Tray`，唯一带 Windows 目标的工程）：
 
 ```xml
-<TargetFramework>net10.0-windows</TargetFramework>
+<TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>   <!-- 平台版本必须写进 TFM，见下方说明 -->
 <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>   <!-- Win10 1809 -->
 <UseWPF>true</UseWPF>
 ```
 
+- ✅ **必须**把平台版本写进 TFM（`net10.0-windows10.0.17763.0`）：不带平台版本的 `net10.0-windows` 会被 MSBuild 强制 `TargetPlatformVersion=7.0`，与 `SupportedOSPlatformVersion=10.0.17763.0` 冲突 → **`NETSDK1135` 编译失败**；而且显式设 `<TargetPlatformVersion>` 属性**无效**（实测被覆盖回 7.0）。17763 = Win10 1809，与最低 OS 同值，不是为了抬门槛。
 - ❌ **不要**写 `net10.0-windows10.0.22000.0`（或更高）——那是 Win11 的目标框架，会把最低系统要求直接抬到 Win11。
 - ❌ **不要**给库或测试工程加 `-windows`（迭代 1 复核 P1-1 实测：会让 Linux/CI 无法构建，零改动复核就此不可能）。
   只有托盘工程需要 `-windows`，因为只有它调用 Windows 专有 API（DPAPI / NotifyIcon）。
@@ -105,10 +106,12 @@
 #    依据：迭代 1 复核 P1-1（库/测试声明 net10.0-windows 会让 Linux/CI 无法构建，已改回 net10.0）
 bad=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2>/dev/null)
 [ -n "$bad" ] && echo "FAIL: 库/测试不该用 -windows 目标框架: $bad"
-need=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Tray 2>/dev/null)
-[ -z "$need" ] && echo "FAIL: 托盘工程必须是 net10.0-windows（否则 Win10 API 无编译期校验）"
-for f in $(grep -rl "net10.0-windows" --include=*.csproj src/LanSync.Tray 2>/dev/null); do
-  grep -q "SupportedOSPlatformVersion>10.0.17763.0" "$f" || echo "FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0"
+#    托盘工程：TFM 必须带平台版本（net10.0-windows10.0.17763.0），否则 NETSDK1135（见 §2 说明）
+for f in $(grep -rl "<TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Tray 2>/dev/null); do
+  grep -q "<TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>" "$f" \
+    || echo "FAIL: $f 的 TFM 必须写成 net10.0-windows10.0.17763.0（不带平台版本会 NETSDK1135）"
+  grep -q "SupportedOSPlatformVersion>10.0.17763.0" "$f" \
+    || echo "FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0"
 done
 
 # ② Win11 专有依赖（防误引入）

@@ -21,9 +21,10 @@ jobs:
           echo "① 库/测试不得使用 -windows 目标框架（P1-1）"
           bad=$(grep -rl "TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2>/dev/null || true)
           if [ -n "$bad" ]; then echo "FAIL: $bad"; exit 1; fi
-          echo "② 托盘工程必须是 net10.0-windows 且钉住最低 OS 10.0.17763.0（若托盘工程尚未创建则跳过）"
+          echo "② 托盘工程 TFM 必须带平台版本（net10.0-windows10.0.17763.0）且钉住最低 OS 10.0.17763.0（若托盘工程尚未创建则跳过）"
           if [ -d src/LanSync.Tray ]; then
-            for f in $(grep -rl "net10.0-windows" --include=*.csproj src/LanSync.Tray); do
+            for f in $(grep -rl "<TargetFramework>net10.0-windows" --include=*.csproj src/LanSync.Tray); do
+              grep -q "<TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>" "$f" || { echo "FAIL: $f 的 TFM 必须写成 net10.0-windows10.0.17763.0（NETSDK1135）"; exit 1; }
               grep -q "SupportedOSPlatformVersion>10.0.17763.0" "$f" || { echo "FAIL: $f 缺 SupportedOSPlatformVersion"; exit 1; }
             done
           fi

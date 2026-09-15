@@ -5,5 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <!-- 允许在非 Windows 上构建 Windows 目标工程（Linux CI 要构建含托盘的完整 sln；Windows 上无副作用） -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 </Project>
