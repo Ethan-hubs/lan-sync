@@ -12,12 +12,12 @@
 ; changes the machine-level registry value.
 ;
 ; §14(4) autostart is NOT written here (elevated HKCU would hit the admin hive); the tray
-; writes/verifies its own HKCU Run entry on first launch. Uninstall cleans it in [UninstallRun]
-; for the *invoking* user's hive — note: `runasoriginaluser` is NOT supported in [UninstallRun]
-; (verified: iscc 6.7.3 rejects it), so if the uninstaller was elevated with *another* admin
-; account the stale Run entry survives and is healed by the tray on next launch.
+; writes/verifies its own HKCU Run entry on first launch. Uninstall cleans the invoking user's
+; hive — note: `runasoriginaluser` is NOT supported in [UninstallRun] (verified: iscc 6.7.3
+; rejects it), so a stale Run entry can survive when the uninstaller was elevated with a
+; *different* admin account; the tray heals it on next launch.
 ;
-; Compile with: iscc packaging\setup.iss
+; Compile with: iscc packaging\setup.iss   (needs packaging\languages\ChineseSimplified.isl, vendored)
 
 #define MyAppName "LanSync"
 #define MyAppVersion "0.1.0"
@@ -68,12 +68,14 @@ Filename: "powershell.exe"; \
 [UninstallRun]
 Filename: "powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"" {code:GetPurgeSwitch}"; \
-    Flags: runhidden
-; Clean the current user's HKCU Run autostart entry (runasoriginaluser: hits the real
-; logged-on user's hive, not the elevated one). The tray entry is written by the tray itself.
+    Flags: runhidden; \
+    RunOnceId: "LanSyncUninstallScript"
+; Clean the invoking user's HKCU Run autostart entry + our marker key. `runasoriginaluser`
+; is not supported in this section (iscc rejects it); the tray also self-heals stale entries.
 Filename: "powershell.exe"; \
-    Parameters: "-NoProfile -Command Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'LanSync' -ErrorAction SilentlyContinue"; \
-    Flags: runhidden
+    Parameters: "-NoProfile -Command Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'LanSync' -ErrorAction SilentlyContinue; Remove-Item -Path 'HKCU:\Software\LanSync' -Recurse -Force -ErrorAction SilentlyContinue"; \
+    Flags: runhidden; \
+    RunOnceId: "LanSyncHkcuCleanup"
 
 [Code]
 var
