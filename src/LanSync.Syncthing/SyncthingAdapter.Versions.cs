@@ -6,6 +6,16 @@ namespace LanSync.Syncthing;
 
 public sealed partial class SyncthingAdapter
 {
+    internal Task<JsonNode?> RestoreVersionRawAsync(
+        string folderId,
+        string relativePath,
+        string versionTime,
+        CancellationToken cancellationToken = default) =>
+        RestClient.PostAsync(
+            $"/rest/folder/versions?folder={Escape(folderId)}",
+            new JsonObject { [relativePath] = versionTime },
+            cancellationToken);
+
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<VersionEntry>>> GetVersionsAsync(
         string folderId,
         string? relativePath = null,
@@ -99,6 +109,7 @@ public sealed partial class SyncthingAdapter
         }
 
         var pausedByTransaction = new List<(DeviceId Id, SyncthingAdapter Adapter)>();
+        var resumedByTransaction = new List<DeviceId>();
         var resumeErrors = new List<Exception>();
         Exception? operationError = null;
         try
@@ -166,6 +177,7 @@ public sealed partial class SyncthingAdapter
                 try
                 {
                     await peer.Adapter.ResumeAsync(localDeviceId, CancellationToken.None).ConfigureAwait(false);
+                    resumedByTransaction.Add(peer.Id);
                 }
                 catch (Exception exception)
                 {
@@ -189,7 +201,13 @@ public sealed partial class SyncthingAdapter
             throw new AggregateException(resumeErrors);
         }
 
-        return new VersionRestoreResult(pausedByTransaction.Select(peer => peer.Id).ToArray());
+        return new VersionRestoreResult(
+            folderId,
+            relativePath,
+            versionTime,
+            pausedByTransaction.Select(peer => peer.Id).ToArray(),
+            resumedByTransaction.ToArray(),
+            Succeeded: true);
     }
 
     private async Task WaitForDisconnectionAsync(

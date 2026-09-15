@@ -54,6 +54,11 @@ public sealed class VersionsTests
             PeerAdapters(peer1Adapter, peer2Adapter, pausedAdapter));
 
         CollectionAssert.AreEqual(new[] { Peer1, Peer2 }, result.PausedDevices.Select(device => device.Value).ToArray());
+        Assert.AreEqual("folder", result.FolderId);
+        Assert.AreEqual("file.txt", result.RelativePath);
+        Assert.AreEqual("20260914-010203", result.VersionTime);
+        CollectionAssert.AreEqual(new[] { Peer2, Peer1 }, result.ResumedDevices.Select(device => device.Value).ToArray());
+        Assert.IsTrue(result.Succeeded);
         CollectionAssert.AreEqual(
             new[]
             {

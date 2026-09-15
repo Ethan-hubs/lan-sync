@@ -12,6 +12,7 @@ public sealed partial class SyncthingAdapter
             "connections");
         var connections = response["connections"] as JsonObject ?? new JsonObject();
         var result = new Dictionary<string, ConnectionInfo>(StringComparer.OrdinalIgnoreCase);
+        var warnings = new List<string>();
 
         foreach (var (deviceIdText, value) in connections)
         {
@@ -24,7 +25,16 @@ public sealed partial class SyncthingAdapter
             var paused = connection["paused"]?.GetValue<bool>() ?? false;
             var type = connection["type"]?.GetValue<string>();
             var kind = MapConnectionKind(connected, type);
-            var deviceId = new DeviceId(deviceIdText);
+            DeviceId deviceId;
+            try
+            {
+                deviceId = new DeviceId(deviceIdText);
+            }
+            catch (ArgumentException exception)
+            {
+                warnings.Add($"Skipped non-standard connection device key '{deviceIdText}': {exception.Message}");
+                continue;
+            }
             result[deviceIdText] = new ConnectionInfo(
                 deviceId,
                 connected,
@@ -36,6 +46,7 @@ public sealed partial class SyncthingAdapter
                 connection["outBytesTotal"]?.GetValue<long>());
         }
 
+        LastConnectionWarnings = warnings;
         return result;
     }
 
