@@ -1,4 +1,4 @@
-<#
+﻿<#
 读连接类型与字节数（手册 §4.1 / B4 / E4-A）。
 type 取值已核对（官方 REST 文档）：tcp-client tcp-server quic-client quic-server relay-client relay-server
 #>

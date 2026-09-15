@@ -1,4 +1,4 @@
-<#
+﻿<#
 E5：源端造数并记录源时间（手册 §9.2）。
 create 用例的文件名里带 UTC 毫秒；modify/rename/delete 需要源端事件表，用 -SourceLog 记录。
 用法：

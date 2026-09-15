@@ -1,4 +1,4 @@
-<#
+﻿<#
 E5：接收端落地时间采集（手册 §9.2）。日志路径统一用变量，避免 v0.1 的硬编码问题。
 用法：.\watch-fs-events.ps1 -Root C:\LanSync\m05\sync -Log C:\LanSync\m05\e5-events.csv
 按 Ctrl-C 停止。

@@ -1,4 +1,4 @@
-<#
+﻿<#
 E6：250ms 采样连接状态（手册 §10.1）。人工制造网络切换场景时跑着它。
 用法：.\watch-connections.ps1 -Device <REMOTE_DEVICE_ID> -Out C:\LanSync\m05\e6-connection-log.csv
 #>

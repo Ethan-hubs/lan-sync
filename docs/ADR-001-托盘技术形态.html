@@ -1,0 +1,236 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ADR-001 · 托盘客户端形态、引擎服务化与安装包</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>ADR-001 · 托盘客户端形态、引擎服务化与安装包<span class="badge">tzgj 线开工依据</span></h1><div class="meta">2026-09-15 · WPF 选型 / shawl 服务化 / API key 与权限边界 / Inno Setup 安装步骤 / 托盘↔Adapter 接口边界 / 目录 owner 表</div></div></header>
+<div class="wrap"><main><h1 id="adr-001">ADR-001 · 托盘技术形态与交付形态（选型 / 进程边界 / 密钥 / 状态灯 / 服务化与安装）</h1>
+<ul>
+<li>状态：<strong>已定</strong>（2026-09-15，主线 hermes 线发布；tzgj 线按此实现）</li>
+<li>决策者：hermes 本机线（主线）</li>
+<li>适用范围：<code>src/LanSync.Tray</code>（托盘壳）、<code>packaging/</code>、<code>deploy/</code></li>
+<li>前置事实：PRD v0.10 §6.1.1 / §6.4 / §6.8 / §6.9（R10）、§18.1（E5 实测）；<code>docs/Win10-Win11-兼容性要求.md</code></li>
+<li>变更：2026-09-15 并入「引擎服务化（shawl）」「安装包（Inno Setup）」「托盘↔Adapter 接口边界」「目录 owner 表」四节
+  （此前它们被误写进一份重复的 <code>ADR-001-托盘与安装形态.md</code>，已合并删除——<strong>本文件是唯一 ADR-001</strong>）</li>
+</ul>
+<hr />
+<h2 id="1-wpf-winforms">1. 选型：WPF（不是 WinForms）</h2>
+<p><strong>决定</strong>：托盘壳用 <strong>WPF</strong>，目标框架 <code>net10.0-windows</code>，最低 OS <code>10.0.17763.0</code>（Win10 1809）。</p>
+<p><strong>依据</strong>
+- PRD 附录 F 与 FR-6.8 指定的参考实现是 <strong>GermanCoding/SyncTrayzor</strong>（续维护版，MIT，C#），其本身就是 WPF。
+- 托盘要呈现的都不是"表单"：状态灯 + 同步进度/速率 + 冲突列表（需翻译后的友好文案）+ 恢复面板（列版本、选择、恢复）。这类列表/模板/数据绑定用 WPF 明显更省事，WinForms 会写成大量手工布局代码。</p>
+<h2 id="2-winforms-notifyicon">2. 托盘图标实现：同工程启用 WinForms 的 <code>NotifyIcon</code>，阶段一不引第三方包</h2>
+<p><strong>决定</strong>：<code>LanSync.Tray.csproj</code> 同时设 <code>UseWPF=true</code> 与 <code>UseWindowsForms=true</code>，托盘图标用 <code>System.Windows.Forms.NotifyIcon</code> + <code>ContextMenuStrip</code>。</p>
+<p><strong>依据</strong>：<code>NotifyIcon</code> 由 Windows Desktop SDK 内置，<strong>零 NuGet 依赖</strong>——实现机网络受限（读不到 GitHub），引 <code>Hardcodet.NotifyIcon.Wpf</code> 之类社区库会引入还原风险。若后续确需气泡通知/现代菜单，再单独评估切库（记入 P2，不阻塞骨架）。</p>
+<h2 id="3">3. 状态灯语义（权威口径，纠正"三色 / 四色"的分歧）</h2>
+<p>PRD 里两处口径不同，<strong>以本 ADR 为准</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>表述</th>
+<th>归属</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>§6.1.1 职责 4</td>
+<td>绿=直连 / 黄=中继 / 红=离线（Adapter 只提供这三态）</td>
+<td>阶段一</td>
+</tr>
+<tr>
+<td>§6.4</td>
+<td>四色：绿/黄/红 + <strong>橙=授权异常</strong></td>
+<td>橙属<strong>阶段二</strong>（授权系统阶段一明确不做）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>阶段一实现四态</strong>：<code>绿=直连</code>、<code>黄=中继</code>、<code>红=离线</code>、<strong><code>灰=已暂停</code></strong>（本地暂停态，由 pause/resume 决定，不需要授权信息）。
+<strong>橙=授权异常</strong>只在枚举里<strong>留色位</strong>，阶段一不取值、不显示。</p>
+<h2 id="4-ipc-ipc">4. 进程边界与 IPC：阶段一不引入自定义 IPC</h2>
+<p><strong>决定</strong>
+- 引擎（<code>syncthing.exe</code>）以 <strong>Windows Service</strong> 身份运行；托盘假设"引擎服务已在跑、REST 在 <code>127.0.0.1:8384</code>"。
+  <strong>服务包装器 = <code>shawl</code></strong>（依据：① 真机实测 <code>sc.exe create</code> 直接包 console 程序 → <code>Start-Service</code> 失败 <code>CouldNotStartService</code>；
+  ② 上游 <code>Bill-Stewart/SyncthingWindowsSetup</code> 内部即用 <code>shawl.exe</code>，并用 <code>asmt.exe</code> 管服务账号）。落地归属见 §9 owner 表。
+- <strong>托盘进程内直接引用 <code>LanSync.Syncthing</code> 库调 REST</strong>，不自己起后台常驻、不发明命名管道/套接字协议。
+- 托盘进程<strong>只做状态与配置，不持有文件句柄</strong>（PRD §6.9 P0）。</p>
+<p><strong>触发条件</strong>：将来若 Adapter 需要常驻进程（后台守护、跨用户会话访问），再单开 ADR-002 引入 IPC —— 现在做属于过度设计。</p>
+<h2 id="5">5. 配置与密钥位置</h2>
+<table>
+<thead>
+<tr>
+<th>内容</th>
+<th>位置</th>
+<th>权限/纪律</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>引擎 home、引擎 config、<strong>引擎 API key</strong></td>
+<td><code>%ProgramData%\LanSync\api-key.txt</code></td>
+<td>安装器创建；ACL：<code>SYSTEM</code>+<code>Administrators</code>+服务账号完全控制、本机 <code>Users</code> <strong>只读</strong>（托盘是普通用户进程，必须能读）。<strong>不得写日志、不得进仓库、不得进公开文档</strong></td>
+</tr>
+<tr>
+<td>用户级设置（窗口位置、上次页签）</td>
+<td><code>%LOCALAPPDATA%\LanSync\settings.json</code></td>
+<td>普通用户可写</td>
+</tr>
+<tr>
+<td>日志</td>
+<td><code>%ProgramData%\LanSync\logs\</code>（引擎）+ 托盘自身日志同目录</td>
+<td>与引擎统一，便于支持排障</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-tzgj">6. 骨架范围（tzgj 线第一批交付）</h2>
+<ol>
+<li><code>src/LanSync.Tray/LanSync.Tray.csproj</code>：<code>net10.0-windows</code>；<code>UseWPF</code>；<code>UseWindowsForms</code>；<code>SupportedOSPlatformVersion=10.0.17763.0</code>；引用 <code>LanSync.Syncthing</code>、<code>LanSync.Core</code>；加进 <code>LanSync.sln</code></li>
+<li>主窗最小骨架：连接状态区（四态灯）、文件夹列表、暂停/恢复按钮占位、"冲突"页签占位、"恢复版本"面板占位</li>
+<li><code>NotifyIcon</code> + 上下文菜单（打开主窗 / 退出）</li>
+<li>状态来源接 Adapter（<code>LanSync.Syncthing</code>）：连接类型 → 灯色；<code>/rest/folder/errors</code> → 冲突页签数据源</li>
+<li><strong>不实现</strong>：授权相关（橙）、自动更新、代码签名、真正的恢复写操作（面板先只读展示）</li>
+</ol>
+<p><strong>不含</strong>（别的线负责）：引擎 Service 注册（codex 线）、安装器/长路径 manifest/PS 5.1 脚本骨架（tzgj 线第二批）</p>
+<h2 id="7">7. 约束与验收</h2>
+<ul>
+<li>禁止 Win11 专有组件（<code>WindowsAppSDK</code>、Mica、SnapLayout 等）；目标 Win10 1809 起</li>
+<li><code>.ps1</code> 含非 ASCII 必须带 UTF-8 BOM；用 PowerShell 5.1 语法</li>
+<li><code>Directory.Build.props</code> 已开 <code>TreatWarningsAsErrors</code>：<strong>构建零警告</strong></li>
+<li>骨架验收：<code>dotnet build LanSync.sln</code> + <code>dotnet format LanSync.sln --verify-no-changes</code> 通过（功能完整度不要求）</li>
+</ul>
+<h2 id="8">8. 实现机环境前提（写给实现方）</h2>
+<ul>
+<li>需要 <strong>.NET SDK 10.0.401</strong>（<code>global.json</code> 钉 <code>10.0.401</code> + <code>rollForward: latestPatch</code> → 必须落在 <strong>10.0.4xx</strong> 带内；截至 2026-09-15，10.0.4xx 只有 <code>10.0.400</code> 与 <code>10.0.401</code>）</li>
+<li>Linux CI 注意：托盘工程是 <code>net10.0-windows</code>，跨平台 job 只跑 <code>LanSync.Core</code> / <code>LanSync.Syncthing</code> / 两个测试工程；全 sln 构建放 Windows job（需要时加 <code>EnableWindowsTargeting</code>）——CI 侧由主线落地，实现方不必处理</li>
+</ul>
+<h2 id="9">9. 引擎服务化细节（安装器落地用）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>决定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>包装器</td>
+<td><code>shawl.exe</code>（MIT），包 <code>syncthing.exe serve --home %ProgramData%\LanSync\engine …</code></td>
+</tr>
+<tr>
+<td>服务名 / 账号</td>
+<td>服务名 <code>LanSyncEngine</code>；专用本地账号 <strong><code>LanSyncSvc</code></strong>（非 SYSTEM、非交互登录）</td>
+</tr>
+<tr>
+<td>账号权限</td>
+<td>① "Log on as a service"；② 同步目录 <code>Modify</code>：<code>icacls "&lt;dir&gt;" /grant "LanSyncSvc:(OI)(CI)M" /t</code>；③ 卸载时<strong>禁用不删除</strong>账号</td>
+</tr>
+<tr>
+<td>依赖安装</td>
+<td>安装器需检测 .NET Desktop Runtime 与 VC 运行库；缺失时提示并提供离线包路径</td>
+</tr>
+<tr>
+<td>失败可见性</td>
+<td>服务启动失败必须写入 <code>%ProgramData%\LanSync\logs\install.log</code> 并在安装器末尾显式提示（不能静默失败）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>排障锚点：真机实验里"裸进程随 SSH 会话被杀""计划任务 <code>LastTaskResult=1</code> 起不来"两类失败都记录在 <code>docs/M0.5-真机实验结论（Windows+跨网）.md</code>。</p>
+</blockquote>
+<h2 id="10-inno-setup">10. 安装包与安装/卸载步骤（Inno Setup）</h2>
+<p><strong>形态</strong>：单文件 <code>.exe</code>（Inno Setup），支持 <code>/SILENT</code>、<code>/DIR=</code>、<code>/SYNCDIR=</code>。</p>
+<ol>
+<li>校验并落地 <code>syncthing.exe</code>（<strong>SHA-256 固定比对</strong>：v2.1.5 = <code>36a0f7bc…f50344</code>）；落地 <code>shawl.exe</code> 与 <code>LanSync.Tray.exe</code></li>
+<li>创建 <code>LanSyncSvc</code> → 授予"作为服务登录" → 用 shawl 注册服务（参数见 §9）</li>
+<li>生成 API key + 写配置（ACL 按 §5）</li>
+<li>交互询问同步目录 → <code>icacls</code> 授权 → 起服务 → 托盘加开机自启（HKCU <code>Run</code>）</li>
+<li><strong>卸载</strong>：停服务 → 删服务 → 禁账号 → 删程序与配置 → <strong>绝不删除任何用户同步目录</strong>（PRD §6.9）</li>
+<li>代码签名：安装包与两个 exe 都需签名；<strong>证书来源属待项目发起人决策项</strong>（R10 的 P0），未签名前只在自己机器试装</li>
+</ol>
+<h2 id="11-adapter">11. 托盘 ↔ Adapter 接口边界</h2>
+<ul>
+<li>托盘<strong>只调用 <code>LanSync.Syncthing</code> 暴露的方法</strong>，<strong>禁止</strong>自己发 Syncthing REST 请求（否则错误处理与授权口径会双份）。</li>
+<li>迭代 1 已具备（且通过零改动复核）：<code>HealthAsync</code>、配置安全更新（GET→改→PUT）、设备/文件夹/忽略规则、<code>GetConnectionsAsync</code>
+  （映射 <code>ConnectionKind.Direct/Relay/Offline/Unknown</code> + paused）、<code>SubscribeEventsAsync</code>、<code>Pause/ResumeAsync</code>、<code>GetFolderErrorsAsync</code>（<strong>只读</strong>）。</li>
+<li><strong>尚不可用</strong>（等 codex 线迭代 2 的 C7）：版本恢复事务。⇒ 托盘"恢复版本"面板<strong>先只读展示</strong>，"恢复"按钮禁用或留空实现。</li>
+<li>状态灯映射见 §3（四态 + 橙留位）。</li>
+</ul>
+<h2 id="12-owner">12. 目录 owner 表（防撞车；跨边界先在看板登记）</h2>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>owner</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/LanSync.Core</code>、<code>src/LanSync.Syncthing</code>、<code>tests/*</code></td>
+<td><strong>codex 线</strong></td>
+<td>迭代 2：C7 恢复事务 + P1-3 / P2-4 / P2-5 / P2-6</td>
+</tr>
+<tr>
+<td><code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code></td>
+<td><strong>tzgj 线</strong></td>
+<td>本 ADR 即其开工依据</td>
+</tr>
+<tr>
+<td><code>docs/</code>、<code>adapter/</code>、<code>m05-toolkit/</code>、<code>scripts/</code>、根文档、<code>.github/</code></td>
+<td><strong>主线</strong></td>
+<td>唯一合并口与发布口</td>
+</tr>
+</tbody>
+</table>
+<h2 id="13-adr">13. 本 ADR 依赖的硬事实来源（改结论前先核这些）</h2>
+<table>
+<thead>
+<tr>
+<th>事实</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sc create</code> 不能直接包 console 程序</td>
+<td>真机结论 §5</td>
+</tr>
+<tr>
+<td>上游用 <code>shawl</code> 跑服务、<code>asmt</code> 管账号</td>
+<td><code>Bill-Stewart/SyncthingWindowsSetup</code> README</td>
+</tr>
+<tr>
+<td>服务账号需 "Log on as a service" + 目录 <code>icacls … Modify</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>库/测试不得用 <code>-windows</code> TFM（仅托盘用）</td>
+<td>迭代 1 复核 P1-1（已修复关闭）</td>
+</tr>
+<tr>
+<td>恢复必须三步事务且响应字典判空</td>
+<td><code>adapter/exp_restore.py</code> 对照实验 + G1 契约 §6</td>
+</tr>
+<tr>
+<td><code>fsWatcherDelayS</code> 建议默认 1–2s（p50 2.01s / p95 3.09s）</td>
+<td>真机结论 §11 / PRD §18.1</td>
+</tr>
+</tbody>
+</table></main><footer>ADR-001 · 托盘客户端形态、引擎服务化与安装包 · 生成于 2026-09-13</footer></div></body></html>

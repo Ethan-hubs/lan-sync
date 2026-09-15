@@ -1,4 +1,4 @@
-<#
+﻿<#
 E4-B：强制走 relay。
 v0.2 首选做法（比防火墙干净）：临时把 Sync Protocol Listen Addresses 里的直连项去掉，
 只保留 relay URI；测完用 -Action Restore 还原。
