@@ -94,11 +94,11 @@
 | Windows 11 25H2 | Desktop-B（台式机，Office 已装；测试区 `D:\LanSync\m05`） | ✅ 已接入 |
 | Windows 11 25H2（家庭） | huawei（NoteBook-A D-16） | ⏳ 未接入 |
 | Windows Server 2025 | WinServer-A（`D:\LanSync\m05`） | ✅ 已接入（无 Office） |
-| **Windows 10**（LTSC/Enterprise 或 22H2） | **机队内暂无** | ❌ **缺真机** |
+| **Windows 10** | tzgj 开发机（`D:\Agent\Hermes`） | ⏳ **已接入**：静态检查 + 托盘 manifest 已验；**待一次真实安装/同步**（ADR-001 §15 第 3 项，版本号用 `winver` 记录） |
 
-> **当前 Win10 兼容性靠"规范约束 + 静态检查"保证，没有 Win10 真机验证过**——
-> 这条必须写在风险清单里。补法二选一：① 找一台 Win10（虚拟机也行）跑一遍安装+同步；
-> ② 至少做一次"目标框架/API/脚本语法"的静态审查（见 §8）。
+> **Win10 现状（2026-09-15）**：静态审查（§8）已落地并在 CI 里跑；托盘进程 manifest 的 `longPathAware`
+> 已在构建产物 PE 里实测确认。**仍未做的是"真实安装 + 同步"**——补位机器已就绪（tzgj 线开发机），
+> 按 ADR-001 §15 第 3 项执行；完成前这条继续留在风险清单里。
 
 ## 8. 可自动化检查的清单（建议接进 CI，Codex 迭代 1 就能加）
 
