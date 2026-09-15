@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using LanSync.Core;
 
 namespace LanSync.Syncthing;
 
@@ -6,6 +7,15 @@ public sealed partial class SyncthingAdapter
 {
     public async Task<JsonObject> PingAsync(CancellationToken cancellationToken = default) =>
         RequireObject(await RestClient.GetAsync("/rest/system/ping", cancellationToken).ConfigureAwait(false), "ping");
+
+    public async Task<DeviceId> GetLocalDeviceIdAsync(CancellationToken cancellationToken = default)
+    {
+        var status = RequireObject(
+            await RestClient.GetAsync("/rest/system/status", cancellationToken).ConfigureAwait(false),
+            "status");
+        return new DeviceId(status["myID"]?.GetValue<string>()
+            ?? throw new InvalidDataException("Syncthing status did not contain myID."));
+    }
 
     public async Task<HealthSnapshot> GetHealthAsync(CancellationToken cancellationToken = default)
     {
