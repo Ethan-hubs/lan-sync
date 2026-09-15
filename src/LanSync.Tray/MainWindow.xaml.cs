@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer;
     private readonly ObservableCollection<string> _folders = [];
     private readonly ObservableCollection<FolderError> _conflicts = [];
+    private bool _paused;
 
     public MainWindow()
     {
@@ -48,6 +49,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        PauseButton.IsEnabled = true;
+        ResumeButton.IsEnabled = true;
+
         _timer.Start();
         _ = RefreshAsync();
     }
@@ -61,6 +65,52 @@ public partial class MainWindow : Window
 
     private async void OnTick(object? sender, EventArgs e) => await RefreshAsync().ConfigureAwait(true);
 
+    private async void OnPauseClick(object sender, RoutedEventArgs e)
+    {
+        if (_adapter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _adapter.PauseAsync().ConfigureAwait(true);
+            _paused = true;
+        }
+        catch (Exception exception) when (exception is SyncthingApiException or HttpRequestException)
+        {
+            ApplyStatus(StatusLight.Offline, "引擎不可达");
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private async void OnResumeClick(object sender, RoutedEventArgs e)
+    {
+        if (_adapter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _adapter.ResumeAsync().ConfigureAwait(true);
+            _paused = false;
+        }
+        catch (Exception exception) when (exception is SyncthingApiException or HttpRequestException)
+        {
+            ApplyStatus(StatusLight.Offline, "引擎不可达");
+        }
+
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private void UpdateButtons()
+    {
+        PauseButton.IsEnabled = _adapter is not null && !_paused;
+        ResumeButton.IsEnabled = _adapter is not null && _paused;
+    }
+
     private async Task RefreshAsync()
     {
         if (_adapter is null)
@@ -71,11 +121,14 @@ public partial class MainWindow : Window
         try
         {
             var connections = await _adapter.GetConnectionsAsync().ConfigureAwait(true);
-            var status = StatusLightMapper.Aggregate(connections.Values.ToArray());
+            var status = _paused
+                ? StatusLight.Paused
+                : StatusLightMapper.Aggregate(connections.Values.ToArray());
             ApplyStatus(status, DescribeStatus(status));
 
             await RefreshFoldersAsync().ConfigureAwait(true);
             await RefreshConflictsAsync().ConfigureAwait(true);
+            UpdateButtons();
         }
         catch (Exception exception) when (exception is SyncthingApiException or HttpRequestException or InvalidDataException)
         {
