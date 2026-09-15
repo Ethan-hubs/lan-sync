@@ -81,8 +81,9 @@
 
 - 引擎必须由**服务包装器**托管（`sc create` 直接包 console 程序会 `CouldNotStartService`）：
   上游 Syncthing 生态用的是 **shawl**；亦可用 NSSM / WinSW。
-- 服务账号非 SYSTEM 时：授予"Log on as a service"权限 + 同步目录 `Modify` 权限
-  （`icacls "<dir>" /grant "<acct>:(OI)(CI)M" /t`）。
+- 服务账号用**虚拟服务账号** `NT SERVICE\LanSyncEngine`（无口令、无需"作为服务登录"、卸载自动回收；代价是访问不了网络共享 ⇒ 同步目录限本机路径）。
+  目录授权：`icacls "<dir>" /grant "NT SERVICE\LanSyncEngine:(OI)(CI)M" /t`。
+  （若将来改用带口令的本地账号，才需要"Log on as a service" + 凭据管理，另开 ADR。）
 - 安装包：**Inno Setup 或 MSI**；安装/升级/卸载都要在 Win10 与 Win11 各跑一遍。
 - 卸载**绝不删除用户同步目录**。
 
