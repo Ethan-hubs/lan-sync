@@ -18,7 +18,7 @@ $DotNet10 = 'D:\Tools\dotnet10\dotnet.exe'
 & $DotNet10 format LanSync.sln --verify-no-changes --no-restore
 ```
 
-预期结果：单元测试为 **N/N**（当前 **31/31**）；外部实例和自建实例模式为 **13/13**；显式清空全部 `LANSW_*` 后为 **2 passed / 11 skipped**。
+预期结果：单元测试为 **N/N**（当前 **32/32**）；外部实例和自建实例模式为 **13/13**；显式清空全部 `LANSW_*` 后为 **2 passed / 11 skipped**。
 
 ## 阶段一 Folder 默认值
 
@@ -26,7 +26,9 @@ $DotNet10 = 'D:\Tools\dotnet10\dotnet.exe'
 
 ## 连接状态可观测事件
 
-`SubscribeConnectionChangesAsync` 返回异步事件流。只有设备的可观察连接类型确实发生变化时才产生 `ConnectionKindChangedEvent`，事件包含 `DeviceId`、旧/新 `ConnectionKind` 和 UTC 时间戳。阶段一状态灯映射为：`Direct`=绿、`Relay`=黄、`Offline`=红、`Paused`=灰；橙色只保留给阶段二授权异常，不由 Adapter 产生。
+`SubscribeConnectionChangesAsync` 返回异步事件流。默认只有设备的可观察连接类型确实发生变化时才产生 `ConnectionKindChangedEvent`，事件包含 `DeviceId`、旧/新 `ConnectionKind`、UTC 时间戳和 `IsInitialSnapshot` 标记。阶段一状态灯映射为：`Direct`=绿、`Relay`=黄、`Offline`=红、`Paused`=灰；橙色只保留给阶段二授权异常，不由 Adapter 产生。
+
+托盘启动时推荐直接调用 `SubscribeConnectionChangesAsync(emitInitialSnapshot: true)`，先消费 `IsInitialSnapshot=true` 的当前设备状态，再持续消费同一异步流的变化事件。初始快照与后续比较由同一个订阅状态机完成，因此没有“先单独读取快照、再建立订阅”之间的竞态窗口。`emitInitialSnapshot` 默认关闭，既有“只在类型确实变化时发事件”的语义不变。
 
 ## 对端暂停能力矩阵
 

@@ -113,7 +113,40 @@ public sealed class ConnectionsEventsPauseTests
         Assert.AreEqual(ConnectionKind.Offline, paused.OldKind);
         Assert.AreEqual(ConnectionKind.Paused, paused.NewKind);
         Assert.IsGreaterThanOrEqualTo(offline.Timestamp, paused.Timestamp);
+        Assert.IsFalse(relayed.IsInitialSnapshot);
+        Assert.IsFalse(offline.IsInitialSnapshot);
+        Assert.IsFalse(paused.IsInitialSnapshot);
         Assert.HasCount(7, handler.Requests);
+    }
+
+    [TestMethod]
+    public async Task Connection_observer_initial_snapshot_and_changes_share_one_ordered_stream()
+    {
+        var (adapter, handler) = TestAdapter.Create();
+        EnqueueConnection(handler, connected: true, paused: false, type: "tcp-client");
+        EnqueueConnection(handler, connected: false, paused: true, type: null);
+        EnqueueConnection(handler, connected: true, paused: false, type: "tcp-server");
+
+        await using var observer = adapter.SubscribeConnectionChangesAsync(
+            TimeSpan.FromMilliseconds(1),
+            emitInitialSnapshot: true).GetAsyncEnumerator();
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var snapshot = observer.Current;
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var paused = observer.Current;
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var resumed = observer.Current;
+
+        Assert.IsTrue(snapshot.IsInitialSnapshot);
+        Assert.AreEqual(ConnectionKind.Unknown, snapshot.OldKind);
+        Assert.AreEqual(ConnectionKind.Direct, snapshot.NewKind);
+        Assert.IsFalse(paused.IsInitialSnapshot);
+        Assert.AreEqual(ConnectionKind.Direct, paused.OldKind);
+        Assert.AreEqual(ConnectionKind.Paused, paused.NewKind);
+        Assert.IsFalse(resumed.IsInitialSnapshot);
+        Assert.AreEqual(ConnectionKind.Paused, resumed.OldKind);
+        Assert.AreEqual(ConnectionKind.Direct, resumed.NewKind);
+        Assert.HasCount(3, handler.Requests);
     }
 
     [TestMethod]

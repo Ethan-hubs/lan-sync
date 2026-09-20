@@ -9,7 +9,8 @@ public sealed partial class SyncthingAdapter
 
     public async IAsyncEnumerable<ConnectionKindChangedEvent> SubscribeConnectionChangesAsync(
         TimeSpan? pollInterval = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        bool emitInitialSnapshot = false)
     {
         var interval = pollInterval ?? DefaultConnectionObservationInterval;
         if (interval <= TimeSpan.Zero)
@@ -18,6 +19,20 @@ public sealed partial class SyncthingAdapter
         }
 
         var previous = await GetConnectionsAsync(cancellationToken).ConfigureAwait(false);
+        if (emitInitialSnapshot)
+        {
+            var snapshotTimestamp = DateTimeOffset.UtcNow;
+            foreach (var connection in previous.Values.OrderBy(item => item.DeviceId.Value, StringComparer.OrdinalIgnoreCase))
+            {
+                yield return new ConnectionKindChangedEvent(
+                    connection.DeviceId,
+                    ConnectionKind.Unknown,
+                    GetObservableKind(connection),
+                    snapshotTimestamp,
+                    IsInitialSnapshot: true);
+            }
+        }
+
         while (!cancellationToken.IsCancellationRequested)
         {
             await Task.Delay(interval, cancellationToken).ConfigureAwait(false);

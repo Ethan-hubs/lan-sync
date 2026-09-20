@@ -58,9 +58,7 @@ public sealed class C1C7ContractTests
         Assert.IsNotNull(config["folders"]);
         var folder = (await pair.A.GetFoldersAsync()).OfType<System.Text.Json.Nodes.JsonObject>()
             .Single(folder => folder["id"]?.GetValue<string>() == pair.FolderId);
-        Assert.AreEqual(
-            FolderSpec.DefaultFsWatcherDelaySeconds,
-            folder["fsWatcherDelayS"]!.GetValue<double>());
+        Assert.AreEqual(2.0, folder["fsWatcherDelayS"]!.GetValue<double>());
     }
 
     [TestMethod]
@@ -319,14 +317,16 @@ public sealed class C1C7ContractTests
         var initial = await pair.A.WaitForConnectionAsync(pair.IdB, TimeSpan.FromSeconds(60));
         Assert.IsTrue(initial.Kind is ConnectionKind.Direct or ConnectionKind.Relay);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var observerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
         await using var observer = pair.A.SubscribeConnectionChangesAsync(
             TimeSpan.FromMilliseconds(100),
-            cancellation.Token).GetAsyncEnumerator(cancellation.Token);
+            observerCancellation.Token).GetAsyncEnumerator(observerCancellation.Token);
 
         var pausedTask = WaitForConnectionChangeAsync(
             observer,
             change => change.DeviceId == pair.IdB && change.NewKind == ConnectionKind.Paused,
-            TimeSpan.FromSeconds(30));
+            TimeSpan.FromSeconds(30),
+            observerCancellation);
         await Task.Delay(500, cancellation.Token);
         try
         {
@@ -337,7 +337,8 @@ public sealed class C1C7ContractTests
                 observer,
                 change => change.DeviceId == pair.IdB &&
                     change.NewKind is ConnectionKind.Direct or ConnectionKind.Relay,
-                TimeSpan.FromSeconds(60));
+                TimeSpan.FromSeconds(60),
+                observerCancellation);
             await pair.A.ResumeAsync(pair.IdB, cancellation.Token);
             var resumed = await resumedTask;
 
@@ -381,13 +382,34 @@ public sealed class C1C7ContractTests
     private static async Task<ConnectionKindChangedEvent> WaitForConnectionChangeAsync(
         IAsyncEnumerator<ConnectionKindChangedEvent> observer,
         Func<ConnectionKindChangedEvent, bool> predicate,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        CancellationTokenSource observerCancellation)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
             var remaining = deadline - DateTimeOffset.UtcNow;
-            if (!await observer.MoveNextAsync().AsTask().WaitAsync(remaining))
+            var pendingMove = observer.MoveNextAsync().AsTask();
+            bool hasNext;
+            try
+            {
+                hasNext = await pendingMove.WaitAsync(remaining, observerCancellation.Token);
+            }
+            catch (TimeoutException)
+            {
+                observerCancellation.Cancel();
+                try
+                {
+                    await pendingMove;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                throw new TimeoutException($"Expected connection change was not observed within {timeout}.");
+            }
+
+            if (!hasNext)
             {
                 break;
             }
