@@ -2,7 +2,7 @@
 
 本目录的 `LanSync.Core` 与 `LanSync.Syncthing` 使用 .NET SDK **10.0.401**，目标框架为跨平台 `net10.0`。仓库根目录的 `global.json` 固定 SDK 版本；请先确认 `dotnet --list-sdks` 含 `10.0.401`。
 
-阶段一 Windows 平台口径为：Windows 11 全版本、Windows 10（实测机可运行）、Windows Server 2016 及以上。本口径是当前实测支持范围，不把 Windows 10 1809 LTSC 写成硬门槛。
+阶段一对外支持面：Windows 11 全版本 + Windows Server 2016 及以上；Windows 10 未验证、不承诺（`net10.0-windows10.0.17763.0` 只表示不依赖更高版本 API，不代表支持承诺）。
 
 集成测试支持两种真实 Syncthing v2.1.5 实例来源：
 
@@ -18,7 +18,7 @@ $DotNet10 = 'D:\Tools\dotnet10\dotnet.exe'
 & $DotNet10 format LanSync.sln --verify-no-changes --no-restore
 ```
 
-预期结果：单元测试为 **N/N**（当前 **32/32**）；外部实例和自建实例模式为 **13/13**；显式清空全部 `LANSW_*` 后为 **2 passed / 11 skipped**。
+预期结果：单元测试为 **N/N**（当前 **39/39**）；外部实例和自建实例模式为 **13/13**；显式清空全部 `LANSW_*` 后为 **2 passed / 11 skipped**。
 
 ## 阶段一 Folder 默认值
 

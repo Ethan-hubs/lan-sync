@@ -30,7 +30,44 @@
                 </ListView>
             </TabItem>
             <TabItem Header="恢复版本">
-                <TextBlock Text="版本恢复占位（阶段一只读展示）" Foreground="Gray" Margin="8" VerticalAlignment="Top"/>
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="文件夹" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="RestoreFolderCombo" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2"
+                              DisplayMemberPath="DisplayName" Margin="0,0,0,8"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="相对路径" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <TextBox x:Name="RestorePathBox" Grid.Row="1" Grid.Column="1" Margin="0,0,8,8"/>
+                    <Button Grid.Row="1" Grid.Column="2" Content="查询版本" Width="90" Margin="0,0,0,8"
+                            Click="OnLoadVersionsClick"/>
+
+                    <ListView x:Name="RestoreVersionList" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="版本时间" DisplayMemberBinding="{Binding VersionTime}" Width="180"/>
+                                <GridViewColumn Header="文件时间" DisplayMemberBinding="{Binding ModTime}" Width="220"/>
+                                <GridViewColumn Header="大小" DisplayMemberBinding="{Binding Size}" Width="100"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+
+                    <TextBlock x:Name="RestoreResultText" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3"
+                               TextWrapping="Wrap" Margin="0,8,0,8"/>
+                    <Button x:Name="RestoreButton" Grid.Row="4" Grid.Column="2" Content="恢复所选版本"
+                            Width="120" IsEnabled="False" Click="OnRestoreClick"/>
+                </Grid>
             </TabItem>
         </TabControl>
     </DockPanel>

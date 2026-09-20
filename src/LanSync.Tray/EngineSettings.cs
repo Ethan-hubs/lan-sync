@@ -22,7 +22,7 @@ internal static class EngineSettings
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                 "LanSync",
-                "api-key");
+                "api-key.txt");
             return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
         }
         catch (Exception)
