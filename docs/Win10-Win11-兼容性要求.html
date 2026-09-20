@@ -30,7 +30,8 @@
 </blockquote>
 <hr />
 <h2 id="0">0. 一句话</h2>
-<p><strong>一份二进制、一套脚本，同时跑在 Win10 与 Win11 上</strong>——目标是 <code>net10.0-windows</code> 且最低支持到 <strong>Win10 1809（build 17763）</strong>，
+<p><strong>一份二进制、一套脚本，同时跑在 Win10 与 Win11 上</strong>——构建目标 <code>net10.0-windows10.0.17763.0</code>（API 下限 = Win10 1809），
+实际<strong>支持口径按实测</strong>（见 §1 表），
 不使用任何 Win11 专有 UI/API，不用 PS7 专有语法，不假设长路径已开启。</p>
 <h2 id="1">1. 平台声明（要写进产品说明，别承诺做不到的）</h2>
 <table>
@@ -45,26 +46,30 @@
 <tr>
 <td>Windows 11（21H2 ~ 26H1，含 Home/Pro）</td>
 <td>✅ 全版本</td>
-<td>.NET 10 官方支持列表</td>
+<td>.NET 10 官方支持列表 + 真机（Win11 25H2 patch 级已装过）</td>
 </tr>
 <tr>
-<td>Windows 10 <strong>LTSC / Enterprise</strong>（1809 / 21H2 等）</td>
+<td>Windows 10（家用/专业版，如 22H2）</td>
+<td>✅ <strong>实测口径：能装上能跑就给支持</strong></td>
+<td>tzgj 的 Win10 22H2 开发机上 <code>dotnet build/format</code> + 四条静态检查全过（真机装卸待补）</td>
+</tr>
+<tr>
+<td>Windows 10 <strong>LTSC / Enterprise</strong>（1809 起）</td>
 <td>✅</td>
-<td>.NET 10 官方支持列表仅列这两个通道</td>
-</tr>
-<tr>
-<td>Windows 10 <strong>家用/专业版</strong>（如 22H2）</td>
-<td>⚠️ <strong>不承诺</strong></td>
-<td>该版本本身已 EOL，.NET 10 未列入支持范围</td>
+<td>与上一行同一二进制；<strong>不作为硬门槛对外承诺</strong></td>
 </tr>
 <tr>
 <td>Windows Server 2016 / 2019 / 2022 / 2025</td>
 <td>✅</td>
-<td>.NET 10 官方支持列表</td>
+<td>.NET 10 官方支持列表 + 真机（Server 2025 上 <code>iscc</code> 编译与装卸测试）</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
+<p><strong>2026-09-20 决策（项目发起人「先按能跑的标准来」）</strong>：支持口径改为<strong>实测口径</strong>——Win11 全版本 / <strong>Windows 10（实测机可跑）</strong> /
+Server 2016+；<strong>不再把「Win10 1809 LTSC」写成硬门槛</strong>（那是构建目标平台的 API 下限，不是对用户的门槛承诺）。
+构建侧仍钉 <code>net10.0-windows10.0.17763.0</code>：它保证二进制<strong>不依赖 17763 之后的 API</strong>，从而在 Win10 上也能跑；
+家用版 Win10 已 EOL，官方支持列表不列它——我们按"实测能跑"给支持，但不承诺微软级别的安全更新。</p>
 <p>结论：产品说明写「<strong>Windows 11 全版本 + Windows 10 LTSC/Enterprise（1809 起）+ Windows Server 2016 起</strong>」，
 不要笼统写"支持 Windows 10/11"。</p>
 </blockquote>
@@ -73,11 +78,12 @@
 <pre><code class="language-xml">&lt;TargetFramework&gt;net10.0&lt;/TargetFramework&gt;          &lt;!-- 平台中立：Linux/CI 也能构建与复核 --&gt;
 </code></pre>
 <p><strong>托盘工程</strong>（<code>LanSync.Tray</code>，唯一带 Windows 目标的工程）：</p>
-<pre><code class="language-xml">&lt;TargetFramework&gt;net10.0-windows&lt;/TargetFramework&gt;
+<pre><code class="language-xml">&lt;TargetFramework&gt;net10.0-windows10.0.17763.0&lt;/TargetFramework&gt;   &lt;!-- 平台版本必须写进 TFM，见下方说明 --&gt;
 &lt;SupportedOSPlatformVersion&gt;10.0.17763.0&lt;/SupportedOSPlatformVersion&gt;   &lt;!-- Win10 1809 --&gt;
 &lt;UseWPF&gt;true&lt;/UseWPF&gt;
 </code></pre>
 <ul>
+<li>✅ <strong>必须</strong>把平台版本写进 TFM（<code>net10.0-windows10.0.17763.0</code>）：不带平台版本的 <code>net10.0-windows</code> 会被 MSBuild 强制 <code>TargetPlatformVersion=7.0</code>，与 <code>SupportedOSPlatformVersion=10.0.17763.0</code> 冲突 → <strong><code>NETSDK1135</code> 编译失败</strong>；而且显式设 <code>&lt;TargetPlatformVersion&gt;</code> 属性<strong>无效</strong>（实测被覆盖回 7.0）。17763 = Win10 1809，与最低 OS 同值，不是为了抬门槛。</li>
 <li>❌ <strong>不要</strong>写 <code>net10.0-windows10.0.22000.0</code>（或更高）——那是 Win11 的目标框架，会把最低系统要求直接抬到 Win11。</li>
 <li>❌ <strong>不要</strong>给库或测试工程加 <code>-windows</code>（迭代 1 复核 P1-1 实测：会让 Linux/CI 无法构建，零改动复核就此不可能）。
   只有托盘工程需要 <code>-windows</code>，因为只有它调用 Windows 专有 API（DPAPI / NotifyIcon）。</li>
@@ -137,8 +143,9 @@
 <ul>
 <li>引擎必须由<strong>服务包装器</strong>托管（<code>sc create</code> 直接包 console 程序会 <code>CouldNotStartService</code>）：
   上游 Syncthing 生态用的是 <strong>shawl</strong>；亦可用 NSSM / WinSW。</li>
-<li>服务账号非 SYSTEM 时：授予"Log on as a service"权限 + 同步目录 <code>Modify</code> 权限
-  （<code>icacls "&lt;dir&gt;" /grant "&lt;acct&gt;:(OI)(CI)M" /t</code>）。</li>
+<li>服务账号用<strong>虚拟服务账号</strong> <code>NT SERVICE\LanSyncEngine</code>（无口令、无需"作为服务登录"、卸载自动回收；代价是访问不了网络共享 ⇒ 同步目录限本机路径）。
+  目录授权：<code>icacls "&lt;dir&gt;" /grant "NT SERVICE\LanSyncEngine:(OI)(CI)M" /t</code>。
+  （若将来改用带口令的本地账号，才需要"Log on as a service" + 凭据管理，另开 ADR。）</li>
 <li>安装包：<strong>Inno Setup 或 MSI</strong>；安装/升级/卸载都要在 Win10 与 Win11 各跑一遍。</li>
 <li>卸载<strong>绝不删除用户同步目录</strong>。</li>
 </ul>
@@ -168,26 +175,28 @@
 <td>✅ 已接入（无 Office）</td>
 </tr>
 <tr>
-<td><strong>Windows 10</strong>（LTSC/Enterprise 或 22H2）</td>
-<td><strong>机队内暂无</strong></td>
-<td>❌ <strong>缺真机</strong></td>
+<td><strong>Windows 10</strong></td>
+<td>tzgj 开发机（<code>D:\Agent\Hermes</code>）</td>
+<td>⏳ <strong>已接入</strong>：静态检查 + 托盘 manifest 已验；<strong>待一次真实安装/同步</strong>（ADR-001 §15 第 3 项，版本号用 <code>winver</code> 记录）</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>当前 Win10 兼容性靠"规范约束 + 静态检查"保证，没有 Win10 真机验证过</strong>——
-这条必须写在风险清单里。补法二选一：① 找一台 Win10（虚拟机也行）跑一遍安装+同步；
-② 至少做一次"目标框架/API/脚本语法"的静态审查（见 §8）。</p>
+<p><strong>Win10 现状（2026-09-15）</strong>：静态审查（§8）已落地并在 CI 里跑；托盘进程 manifest 的 <code>longPathAware</code>
+已在构建产物 PE 里实测确认。<strong>仍未做的是"真实安装 + 同步"</strong>——补位机器已就绪（tzgj 线开发机），
+按 ADR-001 §15 第 3 项执行；完成前这条继续留在风险清单里。</p>
 </blockquote>
 <h2 id="8-cicodex-1">8. 可自动化检查的清单（建议接进 CI，Codex 迭代 1 就能加）</h2>
 <pre><code class="language-bash"># ① 目标框架与最低 OS（防&quot;抬门槛&quot;）—— 注意：只有**托盘工程**用 -windows，库与测试必须平台中立
 #    依据：迭代 1 复核 P1-1（库/测试声明 net10.0-windows 会让 Linux/CI 无法构建，已改回 net10.0）
 bad=$(grep -rl &quot;TargetFramework&gt;net10.0-windows&quot; --include=*.csproj src/LanSync.Core src/LanSync.Syncthing tests 2&gt;/dev/null)
 [ -n &quot;$bad&quot; ] &amp;&amp; echo &quot;FAIL: 库/测试不该用 -windows 目标框架: $bad&quot;
-need=$(grep -rl &quot;TargetFramework&gt;net10.0-windows&quot; --include=*.csproj src/LanSync.Tray 2&gt;/dev/null)
-[ -z &quot;$need&quot; ] &amp;&amp; echo &quot;FAIL: 托盘工程必须是 net10.0-windows（否则 Win10 API 无编译期校验）&quot;
-for f in $(grep -rl &quot;net10.0-windows&quot; --include=*.csproj src/LanSync.Tray 2&gt;/dev/null); do
-  grep -q &quot;SupportedOSPlatformVersion&gt;10.0.17763.0&quot; &quot;$f&quot; || echo &quot;FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0&quot;
+#    托盘工程：TFM 必须带平台版本（net10.0-windows10.0.17763.0），否则 NETSDK1135（见 §2 说明）
+for f in $(grep -rl &quot;&lt;TargetFramework&gt;net10.0-windows&quot; --include=*.csproj src/LanSync.Tray 2&gt;/dev/null); do
+  grep -q &quot;&lt;TargetFramework&gt;net10.0-windows10.0.17763.0&lt;/TargetFramework&gt;&quot; &quot;$f&quot; \
+    || echo &quot;FAIL: $f 的 TFM 必须写成 net10.0-windows10.0.17763.0（不带平台版本会 NETSDK1135）&quot;
+  grep -q &quot;SupportedOSPlatformVersion&gt;10.0.17763.0&quot; &quot;$f&quot; \
+    || echo &quot;FAIL: $f 缺 SupportedOSPlatformVersion=10.0.17763.0&quot;
 done
 
 # ② Win11 专有依赖（防误引入）

@@ -23,7 +23,7 @@
 <header class="top"><div class="wrap"><h1>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点）<span class="badge">阶段二候选 · 待排期</span></h1><div class="meta">2026-09-20 · 问题（静默覆盖）/ 迭代 2.1 降级语义 / 复用引擎证书的 mTLS 控制端点 / 租约自愈 / 验收清单</div></div></header>
 <div class="wrap"><main><h1 id="adr-002-lan">ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点）</h1>
 <ul>
-<li>状态：<strong>已定稿待排期</strong>（2026-09-20，主线）</li>
+<li>状态：<strong>已定稿 · 不排期</strong>（2026-09-20 项目发起人决策：阶段一正式形态＝降级语义；本 ADR 记档为 M1 之后候选）</li>
 <li>决策者：主线（hermes 本机线）</li>
 <li>适用：<code>src/LanSync.Core</code>、<code>src/LanSync.Syncthing</code>、<code>src/LanSync.Tray</code>、<code>deploy/</code></li>
 <li>前置事实：ADR-001 §11（托盘↔Adapter 接口边界）、PRD §6.8（冲突与恢复）、
@@ -146,9 +146,8 @@ GET  /v1/health    → {&quot;ok&quot;: true, &quot;device&quot;: &quot;&lt;本�
 <li><strong>不可达</strong>：拔网线/关对端 → 恢复仍成功，结果里 <code>UnpausedDevices</code> 非空，UI 出现风险提示；</li>
 <li>端口 <code>22001</code> <strong>不放公网</strong>（云安全组不开）；本机防火墙限制为局域网网段。</li>
 </ol>
-<h2 id="7">7. 待项目发起人拍板</h2>
-<ol>
-<li>是否现在就把控制通道排进 M1 之后的第一批（还是等真实使用中出现"冲突副本"再上）；</li>
-<li>端口号 <code>22001</code> 是否可用（与 <code>22000</code> 同步端口相邻，便于沟通）；</li>
-<li>租约默认值 120 s：恢复操作通常 &lt;10 s，120 s 是安全冗余——是否接受。</li>
-</ol></main><footer>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点） · 生成于 2026-09-13</footer></div></body></html>
+<h2 id="7-2026-09-20">7. 决策留痕（2026-09-20 已定）</h2>
+<p>项目发起人口径：<strong>"先按照能跑的标准来"</strong> ⇒
+1. <strong>控制通道不排期</strong>：阶段一正式形态＝本 ADR §2 的降级语义；本 ADR 转为 <strong>M1 之后候选</strong>，恢复面板不因它阻塞；
+2. 若将来启用：端口 <code>22001</code>、租约 120 s 沿用 §4 的设计（复用引擎证书做 mTLS、租约自愈、越权负例验收）；
+3. 触发条件（届时重新评估）：真实使用中出现因"对端未暂停"导致的冲突副本，或团队规模/环境变化使跨网恢复成为日常操作。</p></main><footer>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点） · 生成于 2026-09-13</footer></div></body></html>

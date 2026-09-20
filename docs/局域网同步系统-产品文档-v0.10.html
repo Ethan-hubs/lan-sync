@@ -1908,7 +1908,8 @@ BEP 会话（含 folder ID、文件名、块哈希）运行在设备间 TLS 之�
 <strong>阶段二验收</strong>：第 5、6、7、9、13 条（授权宽限、后台吊销、离线 .lic、时间回拨、中继层即时断流）。</p>
 </blockquote>
 <ol>
-<li>同网段两台设备：新增/修改/删除/重命名 4 类操作，<strong>P95 ≤ 3 s</strong>（产品默认 <code>fsWatcherDelayS = 1</code>；见 §18.1 的实测依据）。
+<li>同网段两台设备：新增/修改/删除/重命名 4 类操作，<strong>P95 ≤ 3 s</strong>（阶段一<strong>默认 <code>fsWatcherDelayS = 1</code></strong>，
+   实测区间 1~2 s 内 p95 均 ≤ 3.1 s；2026-09-20 决策：默认取 1~2 s，见 §18.1 的实测依据）。
    <strong>局域网同步期间"经 Relay 的文件负载公网流量 = 0"</strong>——注意不是"ECS 总公网流量 = 0"：客户端仍会向 <code>stdiscosrv</code> 宣布/查询地址，
    这部分 discovery 元数据流量不计入本条。删除/重命名允许更宽松，但<strong>必须记录实测值</strong>。</li>
 <li>20GB / 5 万文件首次同步：不丢文件、不产生重复文件、支持断点续传。</li>
