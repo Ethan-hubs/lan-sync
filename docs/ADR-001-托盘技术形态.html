@@ -32,10 +32,43 @@
 </ul>
 <hr />
 <h2 id="1-wpf-winforms">1. 选型：WPF（不是 WinForms）</h2>
-<p><strong>决定</strong>：托盘壳用 <strong>WPF</strong>，目标框架 <code>net10.0-windows</code>，最低 OS <code>10.0.17763.0</code>（Win10 1809）。</p>
+<p><strong>决定</strong>：托盘壳用 <strong>WPF</strong>，目标框架 <strong><code>net10.0-windows10.0.17763.0</code></strong>（平台版本必须编码进 TFM，见 §1.1），最低 OS <code>10.0.17763.0</code>（Win10 1809）。</p>
 <p><strong>依据</strong>
 - PRD 附录 F 与 FR-6.8 指定的参考实现是 <strong>GermanCoding/SyncTrayzor</strong>（续维护版，MIT，C#），其本身就是 WPF。
 - 托盘要呈现的都不是"表单"：状态灯 + 同步进度/速率 + 冲突列表（需翻译后的友好文案）+ 恢复面板（列版本、选择、恢复）。这类列表/模板/数据绑定用 WPF 明显更省事，WinForms 会写成大量手工布局代码。</p>
+<h3 id="11-tfm-adr-2026-09-15">1.1 TFM 必须带平台版本（ADR 修订，2026-09-15 实测）</h3>
+<p><code>net10.0-windows</code>（不带平台版本）配 <code>SupportedOSPlatformVersion=10.0.17763.0</code> <strong>直接编译失败</strong>：
+MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM 一律取 <code>7.0</code>，于是报
+<code>NETSDK1135: SupportedOSPlatformVersion 10.0.17763.0 cannot be higher than TargetPlatformVersion 7.0</code>。
+在 csproj 里显式写 <code>&lt;TargetPlatformVersion&gt;10.0.17763.0&lt;/TargetPlatformVersion&gt;</code> <strong>无效</strong>（会被推理目标覆盖回 7.0）。</p>
+<p>主线用 SDK 10.0.401 复核三种写法（对照实验）：</p>
+<table>
+<thead>
+<tr>
+<th>csproj 写法</th>
+<th>实际 <code>TargetPlatformVersion</code></th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>net10.0-windows</code> + <code>SupportedOSPlatformVersion</code></td>
+<td><code>7.0</code></td>
+<td>❌ NETSDK1135</td>
+</tr>
+<tr>
+<td><code>net10.0-windows</code> + 显式 <code>TargetPlatformVersion</code></td>
+<td><code>7.0</code></td>
+<td>❌ NETSDK1135（显式值被无视）</td>
+</tr>
+<tr>
+<td><strong><code>net10.0-windows10.0.17763.0</code></strong></td>
+<td><code>10.0.17763.0</code></td>
+<td>✅ 构建通过</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论</strong>：托盘工程 TFM 一律写 <code>net10.0-windows10.0.17763.0</code>。这<strong>不是</strong>抬门槛——17763 就是 Win10 1809，与 <code>SupportedOSPlatformVersion</code> 同值；仍然禁止 <code>10.0.22000.0</code> 及更高（那才是 Win11）。</p>
 <h2 id="2-winforms-notifyicon">2. 托盘图标实现：同工程启用 WinForms 的 <code>NotifyIcon</code>，阶段一不引第三方包</h2>
 <p><strong>决定</strong>：<code>LanSync.Tray.csproj</code> 同时设 <code>UseWPF=true</code> 与 <code>UseWindowsForms=true</code>，托盘图标用 <code>System.Windows.Forms.NotifyIcon</code> + <code>ContextMenuStrip</code>。</p>
 <p><strong>依据</strong>：<code>NotifyIcon</code> 由 Windows Desktop SDK 内置，<strong>零 NuGet 依赖</strong>——实现机网络受限（读不到 GitHub），引 <code>Hardcodet.NotifyIcon.Wpf</code> 之类社区库会引入还原风险。若后续确需气泡通知/现代菜单，再单独评估切库（记入 P2，不阻塞骨架）。</p>
@@ -101,7 +134,7 @@
 </table>
 <h2 id="6-tzgj">6. 骨架范围（tzgj 线第一批交付）</h2>
 <ol>
-<li><code>src/LanSync.Tray/LanSync.Tray.csproj</code>：<code>net10.0-windows</code>；<code>UseWPF</code>；<code>UseWindowsForms</code>；<code>SupportedOSPlatformVersion=10.0.17763.0</code>；引用 <code>LanSync.Syncthing</code>、<code>LanSync.Core</code>；加进 <code>LanSync.sln</code></li>
+<li><code>src/LanSync.Tray/LanSync.Tray.csproj</code>：<strong><code>net10.0-windows10.0.17763.0</code></strong>（见 §1.1）；<code>UseWPF</code>；<code>UseWindowsForms</code>；<code>SupportedOSPlatformVersion=10.0.17763.0</code>；<strong><code>ImplicitUsings=disable</code></strong>（WPF+WinForms 同工程时，<code>System.Windows</code> / <code>System.Windows.Forms</code> / <code>System.Drawing</code> 的全局 using 会撞车 → <code>Application</code>、<code>Brush</code> 等 CS0104 歧义；改为显式 using + 别名）；引用 <code>LanSync.Syncthing</code>、<code>LanSync.Core</code>；加进 <code>LanSync.sln</code></li>
 <li>主窗最小骨架：连接状态区（四态灯）、文件夹列表、暂停/恢复按钮占位、"冲突"页签占位、"恢复版本"面板占位</li>
 <li><code>NotifyIcon</code> + 上下文菜单（打开主窗 / 退出）</li>
 <li>状态来源接 Adapter（<code>LanSync.Syncthing</code>）：连接类型 → 灯色；<code>/rest/folder/errors</code> → 冲突页签数据源</li>
@@ -118,7 +151,7 @@
 <h2 id="8">8. 实现机环境前提（写给实现方）</h2>
 <ul>
 <li>需要 <strong>.NET SDK 10.0.401</strong>（<code>global.json</code> 钉 <code>10.0.401</code> + <code>rollForward: latestPatch</code> → 必须落在 <strong>10.0.4xx</strong> 带内；截至 2026-09-15，10.0.4xx 只有 <code>10.0.400</code> 与 <code>10.0.401</code>）</li>
-<li>Linux CI 注意：托盘工程是 <code>net10.0-windows</code>，跨平台 job 只跑 <code>LanSync.Core</code> / <code>LanSync.Syncthing</code> / 两个测试工程；全 sln 构建放 Windows job（需要时加 <code>EnableWindowsTargeting</code>）——CI 侧由主线落地，实现方不必处理</li>
+<li>CI：<code>Directory.Build.props</code> 已设 <code>EnableWindowsTargeting=true</code>，因此 Linux runner 上也能构建含托盘的<strong>完整 sln</strong>（主线实测：<code>dotnet build LanSync.sln</code> 0 警告 0 错误、单测 22/22、无实例集成 2 passed/6 skipped、<code>dotnet format --verify-no-changes</code> 通过）。实现方在本机无需额外设置。</li>
 </ul>
 <h2 id="9">9. 引擎服务化细节（安装器落地用）</h2>
 <table>
@@ -135,11 +168,15 @@
 </tr>
 <tr>
 <td>服务名 / 账号</td>
-<td>服务名 <code>LanSyncEngine</code>；专用本地账号 <strong><code>LanSyncSvc</code></strong>（非 SYSTEM、非交互登录）</td>
+<td>服务名 <code>LanSyncEngine</code>；账号用<strong>虚拟服务账号 <code>NT SERVICE\LanSyncEngine</code></strong>（不是 SYSTEM、也不再有口令）</td>
 </tr>
 <tr>
 <td>账号权限</td>
-<td>① "Log on as a service"；② 同步目录 <code>Modify</code>：<code>icacls "&lt;dir&gt;" /grant "LanSyncSvc:(OI)(CI)M" /t</code>；③ 卸载时<strong>禁用不删除</strong>账号</td>
+<td>① 虚拟账号<strong>无需</strong>"Log on as a service"、无口令（SCM 自动派生）；② 同步目录 <code>Modify</code>：<code>icacls "&lt;dir&gt;" /grant "NT SERVICE\LanSyncEngine:(OI)(CI)M" /t</code>；③ 卸载删服务即回收，无残留账号</td>
+</tr>
+<tr>
+<td>账号决策依据</td>
+<td>第二批实测暴露：原方案（随机口令建本地账号 <code>LanSyncSvc</code> → 口令即弃 → <code>sc config obj=</code> 无法完成，服务实际跑在 SYSTEM）是结构性缺陷。虚拟服务账号无口令可管、无需授予登录权限、卸载自动清理、权限面更小。<strong>边界</strong>：虚拟账号访问不了网络共享 ⇒ 阶段一同步目录限<strong>本机路径</strong>；将来要支持 UNC 再评估本地账号 + 凭据管理（另开 ADR）</td>
 </tr>
 <tr>
 <td>依赖安装</td>
@@ -163,6 +200,9 @@
 <li>交互询问同步目录 → <code>icacls</code> 授权 → 起服务 → 托盘加开机自启（HKCU <code>Run</code>）</li>
 <li><strong>卸载</strong>：停服务 → 删服务 → 禁账号 → 删程序与配置 → <strong>绝不删除任何用户同步目录</strong>（PRD §6.9）</li>
 <li>代码签名：安装包与两个 exe 都需签名；<strong>证书来源属待项目发起人决策项</strong>（R10 的 P0），未签名前只在自己机器试装</li>
+<li><strong>开机自启不放在提权脚本里</strong>：安装器是提权上下文，写 <code>HKCU\...\Run</code> 会落到提升账号的配置单元。改为<strong>托盘首次启动时自写/自校验 HKCU Run</strong>（同用户上下文、幂等、可勾选关闭）；卸载时用 Inno 的 <code>runasoriginaluser</code> 步骤或托盘退出前清理。</li>
+<li><strong>卸载保留引擎身份</strong>：<code>%ProgramData%\LanSync\engine\cert.pem</code>、<code>key.pem</code> 决定 Device ID，删掉会让重装后变成"新设备"、对端要重新批准 ⇒ 默认<strong>保留身份两件套</strong>，删除 <code>config.xml</code>（folder 定义重装后重建）与 <code>api-key.txt</code>；提供 <code>/PURGE</code> 开关做彻底清除。</li>
+<li><strong>长路径</strong>：<code>longPathAware</code> 已声明在托盘进程 manifest（<strong>必须嵌入进程，故 <code>src/LanSync.Tray/app.manifest</code> 是唯一正确位置</strong>，<code>packaging/</code> 不留副本——业经主线在构建产物 PE 里实测确认已嵌入）。引擎侧还依赖机器级 <code>HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled</code>：安装器<strong>检测</strong>该值，为 0 时在向导页明示并给"设为 1"复选框（默认勾选），结果写 <code>install.log</code>；不静默改机器级注册表。</li>
 </ol>
 <h2 id="11-adapter">11. 托盘 ↔ Adapter 接口边界</h2>
 <ul>
@@ -199,6 +239,134 @@
 </tr>
 </tbody>
 </table>
+<h2 id="14-tzgj-2026-09-15">14. 第二批复核结论 → 第三批要求（tzgj 线，2026-09-15 · <strong>已交付并复核通过</strong>）</h2>
+<blockquote>
+<p>第三批交付：分支 <code>tzgj/tray3</code>（commit <code>36626bc</code>），已合入 main。主线复核：构建 0 警告 0 错误、format、
+四条静态检查、三个含中文脚本 BOM、隐私扫描、作者身份均通过；§14 七项逐条对上（虚拟账号 <code>sc config obj=</code> 无 password、
+API key ACL、Runtime 检测、自启搬托盘 <code>AutoStart.cs</code>、长路径向导页、卸载保身份 + <code>/PURGE</code>、publish 产物）。
+遗留见 §15。</p>
+</blockquote>
+<p>主线复核（合入 <code>95595cc</code> 前）：构建 0 警告 0 错误、format 通过、四条静态检查通过、隐私扫描干净、
+<code>syncthing.exe</code> SHA-256 常量与 <code>M0.5-真机结论</code> 记录<strong>逐位一致</strong>、<code>app.manifest</code> 已确认嵌进进程 PE。
+以下为复核发现，属第三批范围：</p>
+<ol>
+<li><strong>服务账号落地（结构性缺陷修复）</strong>：现 <code>install.ps1</code> 随机建账号 <code>LanSyncSvc</code> 后<strong>丢弃口令</strong>，<code>sc config obj=</code> 又未接 ⇒ 服务实际跑在 LocalSystem、目录 ACL 白授。
+   改为虚拟服务账号：删掉建账号/口令/secedit 逻辑，注册后执行 <code>sc.exe config LanSyncEngine obj= "NT SERVICE\LanSyncEngine"</code>（<strong>无 password 参数</strong>），目录 ACL 改授 <code>NT SERVICE\LanSyncEngine</code>。</li>
+<li><strong>API key ACL</strong>：<code>icacls api-key.txt</code> → <code>SYSTEM</code>/<code>Administrators</code> 完全控制、<code>NT SERVICE\LanSyncEngine</code> 读、本机 <code>Users</code> 只读（§5）。</li>
+<li><strong>依赖检测收口</strong>：.NET Desktop Runtime 精确检测（扫 <code>%ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App\10.*</code>），缺失时给出离线包路径并要求确认。</li>
+<li><strong>开机自启搬到托盘</strong>：<code>install.ps1</code> 不再写 <code>HKCU\Run</code>（提权上下文会写到管理员配置单元）；由托盘首启自写/自校验，托盘设置项可关闭；卸载侧用 <code>runasoriginaluser</code> 清理。</li>
+<li><strong>长路径检测</strong>：安装向导检测 <code>HKLM\...\FileSystem\LongPathsEnabled</code>，为 0 时明示 + 复选框设为 1（默认勾选），结果写 <code>install.log</code>；不静默改机器级注册表。</li>
+<li><strong>卸载保身份</strong>：保留 <code>engine\cert.pem</code>、<code>key.pem</code>（Device ID 稳定），删 <code>config.xml</code> 与 <code>api-key.txt</code>；新增 <code>/PURGE</code> 彻底清除开关。</li>
+<li><strong>安装源改 publish 产物</strong>：<code>setup.iss</code> 的 <code>[Files]</code> 取 <code>dotnet publish -c Release -r win-x64</code> 输出并同步进 <code>packaging\bin</code>，不再引用源码树的 <code>bin\Release\...</code> 路径。</li>
+<li>保持不动的：<code>AppId</code> 当前 GUID（改则升级识别断裂）、卸载<strong>绝不</strong>删用户同步目录、失败必须写 <code>install.log</code>。</li>
+</ol>
+<h2 id="15-tzgj-2026-09-15">15. 第三批复核发现 → 第四批要求（tzgj 线：真实安装测试，2026-09-15）</h2>
+<p>主线复核（合入前）发现一处<strong>会在自己机器上立刻踩到</strong>的缺陷，加三项"必须实跑"的验证：</p>
+<ol>
+<li><strong>Runtime 检测有假阴性</strong>：<code>Test-DotnetDesktopRuntime</code> 只扫 <code>%ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App</code>。
+   用户级安装（dotnet-install 默认落 <code>%USERPROFILE%\.dotnet</code>）与 <code>dotnet --list-runtimes</code> 都覆盖不到 ⇒ 在装了用户级
+   SDK/Runtime 的机器上会<strong>误判缺失并阻断安装</strong>（tzgj 自己那台正是用户级 10.0.401）。
+   改法：优先 <code>dotnet --list-runtimes</code>（PATH 上有 dotnet 时），否则同时扫 <code>%ProgramFiles%</code>、<code>%ProgramFiles(x86)%</code>、
+   <code>%USERPROFILE%\.dotnet</code> 三处；仍找不到才阻断。</li>
+<li><strong>Inno 必须真编译</strong>：本机装 Inno Setup（<code>winget install -e --id JRSoftware.InnoSetup</code>；无管理员权限时用
+   <code>innosetup-6.7.1.exe /VERYSILENT /CURRENTUSER</code>），跑 <code>iscc packaging\setup.iss</code> 直到<strong>零错误</strong>。
+   重点验 <code>[Code]</code> 与 <code>[UninstallRun]</code> 里未实跑的写法：<code>{code:GetPurgeSwitch}</code> 与 <code>{param:SYNCDIR}</code> 在<strong>卸载上下文</strong>的行为
+   （若卸载侧不支持 <code>{code:}</code>/<code>{param:}</code>，就退化为"忽略 /PURGE"，方向安全但要写进注释）。</li>
+<li><strong>在 Win10 开发机上做一次真实安装 + 卸载</strong>（这正是兼容性文档里"Win10 真机缺位"的补位动作）：
+   - 先记录 <code>winver</code> 版本与 <code>HKLM\...\FileSystem\LongPathsEnabled</code> 初值
+   - 装：<code>LanSync-Setup-x.y.z.exe /SILENT /SYNCDIR=D:\LanSyncTest</code>（同步目录必须用测试目录）
+   - 验：<code>sc qc LanSyncEngine</code>（账号应为 <code>NT SERVICE\LanSyncEngine</code>）、<code>sc query</code>（Running）、
+     目录 ACL（<code>icacls</code>）、<code>api-key.txt</code> ACL、<code>%ProgramData%\LanSync\logs\install.log</code> 内容、
+     托盘首启写入 <code>HKCU\...\Run</code> 且菜单可关闭
+   - 卸：先默认卸载（<strong><code>engine\cert.pem</code>/<code>key.pem</code> 必须仍在</strong>），再用 <code>/PURGE</code> 卸载（全清）；两次都确认<strong>同步目录未被删</strong>
+   - 全程贴命令与输出到 status.md（这是"实测"，不是"应该"）</li>
+<li><strong>引擎二进制</strong>：主线把 <code>syncthing.exe</code>（v2.1.5，SHA-256 <code>36a0f7bc…f50344</code>）与 <code>shawl.exe</code> 放到交付台，
+   tzgj 下载进 <code>packaging\bin\</code>，先自行核对 SHA-256（install.ps1 运行时也会比对），再编译安装包。</li>
+<li><strong>publish 一致性</strong>：确认 <code>packaging\publish.ps1</code> 产出的 <code>bin\tray\*</code> 与 <code>setup.iss</code> 的 <code>[Files]</code> 完全对得上
+   （含 <code>LanSync.Tray.exe</code>、依赖 dll、<code>app.manifest</code> 内嵌情况）。</li>
+</ol>
+<h2 id="16-2026-09-15">16. 环境分工修订 + 安装器实测缺陷（2026-09-15 晚）</h2>
+<p><strong>触发</strong>：tzgj 的工作机是<strong>工作用电脑，不再接受任何状态改动</strong>（不装服务、不建账号、不改机器级注册表）。
+因此"编译 + 真机装卸"从实现机迁到测试机执行。</p>
+<table>
+<thead>
+<tr>
+<th>环节</th>
+<th>在哪跑</th>
+<th>谁执行</th>
+<th>足迹</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写 C# / <code>dotnet build</code> / <code>dotnet format</code> / 四条静态检查</td>
+<td>工作机（Win10 22H2）</td>
+<td>tzgj 线</td>
+<td><strong>零</strong>（实测通过）</td>
+</tr>
+<tr>
+<td><code>iscc</code> 编译安装包</td>
+<td><strong>WinServer-A 2025</strong>（已装 Inno 6.7.3）</td>
+<td>主线</td>
+<td>装了个开发工具（可卸）</td>
+</tr>
+<tr>
+<td>安装 / 卸载真机测试</td>
+<td><strong>WinServer-A 2025</strong>（<code>LongPathsEnabled=0</code>，长路径向导页正好能真跑）</td>
+<td>主线</td>
+<td>建服务 <code>LanSyncEngine</code> + <code>%ProgramData%\LanSync</code>（脚本可卸，同步目录用 <code>D:\LanSyncTest</code>）</td>
+</tr>
+<tr>
+<td>托盘 GUI 行为</td>
+<td>测试机（Desktop-B Win11 / WinServer-A）</td>
+<td>主线</td>
+<td>见下</td>
+</tr>
+</tbody>
+</table>
+<p><strong>托盘不得再"首启自动写自启项"</strong>：任何机器上跑一次托盘都应在 HKCU 留痕是不可接受的（工作机尤其）。
+修订 §14(4)：① 托盘首启<strong>不写</strong> HKCU Run；② 仅在菜单勾选时写/删（当前用户上下文，安全）；
+③ 启动时若发现 Run 项指向<strong>不存在的 exe</strong> 则删除（自愈残留）；④ 安装器 <code>[Run]</code> 可加一个"以原用户身份写自启"
+的可选步骤（<code>runasoriginaluser</code> 在 <code>[Run]</code> 受支持，<strong>只在 <code>[UninstallRun]</code> 不受支持</strong>）。</p>
+<p><strong>真编译抓出的三处阻塞</strong>（实现机无法发现，因为那里没跑过 <code>iscc</code>）——已在 <code>2b3bcc6</code>、<code>a317318</code> 修复：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>iscc 报错</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>Couldn't open include file "...\Inno Setup 6\Languages\ChineseSimplified.isl"</code></td>
+<td>stock Inno 安装包<strong>不携带</strong>简体中文语言文件</td>
+<td>仓库自带 <code>packaging/languages/ChineseSimplified.isl</code>（取自 jrsoftware/issrc），<code>[Languages]</code> 相对路径引用；英文为默认项</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>Parameter "Flags" includes a flag that is not supported in this section</code>（line 70）</td>
+<td><code>runasoriginaluser</code> <strong>不支持</strong> <code>[UninstallRun]</code></td>
+<td>去掉该 flag；HKCU 清理按"调用者配置单元"处理并注明边界</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>Unknown identifier 'GetCommandLineTail'</code>（line 103）</td>
+<td>函数名不存在（正确名是 <code>GetCmdTail</code>；更稳的是 <code>ParamStr</code>/<code>ParamCount</code>）</td>
+<td>改 <code>HasPurgeSwitch()</code> 用 <code>ParamStr</code> 循环判 <code>/PURGE</code></td>
+</tr>
+<tr>
+<td>+</td>
+<td><code>Warning: [UninstallRun] entries without RunOnceId</code></td>
+<td>未给条目唯一 id</td>
+<td>两条都补 <code>RunOnceId</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>当前编译状态（实测）</strong>：Inno 6.7.3 + SDK 10.0.401 交叉发布的托盘产物 → <code>Successful compile</code>，<strong>0 错误 0 警告</strong>，
+产物 <code>LanSync-Setup-0.1.0.exe</code>（15.7 MB）。</p>
 <h2 id="13-adr">13. 本 ADR 依赖的硬事实来源（改结论前先核这些）</h2>
 <table>
 <thead>
