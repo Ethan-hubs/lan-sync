@@ -50,8 +50,8 @@
 </tr>
 <tr>
 <td>Windows 10（家用/专业版，如 22H2）</td>
-<td>✅ <strong>实测口径：能装上能跑就给支持</strong></td>
-<td>tzgj 的 Win10 22H2 开发机上 <code>dotnet build/format</code> + 四条静态检查全过（真机装卸待补）</td>
+<td>⏳ <strong>待实测</strong>（口径：能装上能跑就给支持）</td>
+<td>原用的 Win10 22H2 机器随 tzgj 线废弃而不可用 ⇒ <strong>当前无 Win10 实测机</strong>，补位方式（VM / 借机 / 口径降级）待项目发起人决策；<strong>补位前不得表述为"已实测"</strong></td>
 </tr>
 <tr>
 <td>Windows 10 <strong>LTSC / Enterprise</strong>（1809 起）</td>
@@ -176,14 +176,14 @@ Server 2016+；<strong>不再把「Win10 1809 LTSC」写成硬门槛</strong>（
 </tr>
 <tr>
 <td><strong>Windows 10</strong></td>
-<td>tzgj 开发机（<code>D:\Agent\Hermes</code>）</td>
-<td>⏳ <strong>已接入</strong>：静态检查 + 托盘 manifest 已验；<strong>待一次真实安装/同步</strong>（ADR-001 §15 第 3 项，版本号用 <code>winver</code> 记录）</td>
+<td>~~原 tzgj 开发机~~（<strong>随线废弃，不可用</strong>）</td>
+<td>❌ <strong>无机器</strong>：需先补位再验（ADR-001 §15 第 3 项、§17 连带缺口）</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
 <p><strong>Win10 现状（2026-09-15）</strong>：静态审查（§8）已落地并在 CI 里跑；托盘进程 manifest 的 <code>longPathAware</code>
-已在构建产物 PE 里实测确认。<strong>仍未做的是"真实安装 + 同步"</strong>——补位机器已就绪（tzgj 线开发机），
+已在构建产物 PE 里实测确认。<strong>仍未做的是"真实安装 + 同步"</strong>——原计划的补位机器随 tzgj 线废弃而不可用，<strong>需先决定补位方式</strong>，
 按 ADR-001 §15 第 3 项执行；完成前这条继续留在风险清单里。</p>
 </blockquote>
 <h2 id="8-cicodex-1">8. 可自动化检查的清单（建议接进 CI，Codex 迭代 1 就能加）</h2>
