@@ -20,10 +20,11 @@
  hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
  footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
 </style></head><body>
-<header class="top"><div class="wrap"><h1>ADR-001 · 托盘客户端形态、引擎服务化与安装包<span class="badge">tzgj 线开工依据</span></h1><div class="meta">2026-09-15 · WPF 选型 / shawl 服务化 / API key 与权限边界 / Inno Setup 安装步骤 / 托盘↔Adapter 接口边界 / 目录 owner 表</div></div></header>
+<header class="top"><div class="wrap"><h1>ADR-001 · 托盘客户端形态、引擎服务化与安装包<span class="badge">托盘/打包开工依据（原 tzgj 线已废弃 → codex 线）</span></h1><div class="meta">2026-09-15 · WPF 选型 / shawl 服务化 / API key 与权限边界 / Inno Setup 安装步骤 / 托盘↔Adapter 接口边界 / 目录 owner 表</div></div></header>
 <div class="wrap"><main><h1 id="adr-001">ADR-001 · 托盘技术形态与交付形态（选型 / 进程边界 / 密钥 / 状态灯 / 服务化与安装）</h1>
 <ul>
-<li>状态：<strong>已定</strong>（2026-09-15，主线 hermes 线发布；tzgj 线按此实现）</li>
+<li>状态：<strong>已定</strong>（2026-09-15 主线发布；原 tzgj 线按此实现，<strong>该线 2026-09-20 废弃</strong>）</li>
+<li>接手：<code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code> → <strong>codex 线</strong>；真机装卸与 <code>iscc</code> 编译 → <strong>主线</strong>（见 §17）</li>
 <li>决策者：hermes 本机线（主线）</li>
 <li>适用范围：<code>src/LanSync.Tray</code>（托盘壳）、<code>packaging/</code>、<code>deploy/</code></li>
 <li>前置事实：PRD v0.10 §6.1.1 / §6.4 / §6.8 / §6.9（R10）、§18.1（E5 实测）；<code>docs/Win10-Win11-兼容性要求.md</code></li>
@@ -132,7 +133,7 @@ MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM �
 </tr>
 </tbody>
 </table>
-<h2 id="6-tzgj">6. 骨架范围（tzgj 线第一批交付）</h2>
+<h2 id="6-tzgj-main">6. 骨架范围（原 tzgj 线第一批交付 · 已并入 main）</h2>
 <ol>
 <li><code>src/LanSync.Tray/LanSync.Tray.csproj</code>：<strong><code>net10.0-windows10.0.17763.0</code></strong>（见 §1.1）；<code>UseWPF</code>；<code>UseWindowsForms</code>；<code>SupportedOSPlatformVersion=10.0.17763.0</code>；<strong><code>ImplicitUsings=disable</code></strong>（WPF+WinForms 同工程时，<code>System.Windows</code> / <code>System.Windows.Forms</code> / <code>System.Drawing</code> 的全局 using 会撞车 → <code>Application</code>、<code>Brush</code> 等 CS0104 歧义；改为显式 using + 别名）；引用 <code>LanSync.Syncthing</code>、<code>LanSync.Core</code>；加进 <code>LanSync.sln</code></li>
 <li>主窗最小骨架：连接状态区（四态灯）、文件夹列表、暂停/恢复按钮占位、"冲突"页签占位、"恢复版本"面板占位</li>
@@ -140,7 +141,7 @@ MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM �
 <li>状态来源接 Adapter（<code>LanSync.Syncthing</code>）：连接类型 → 灯色；<code>/rest/folder/errors</code> → 冲突页签数据源</li>
 <li><strong>不实现</strong>：授权相关（橙）、自动更新、代码签名、真正的恢复写操作（面板先只读展示）</li>
 </ol>
-<p><strong>不含</strong>（别的线负责）：引擎 Service 注册（codex 线）、安装器/长路径 manifest/PS 5.1 脚本骨架（tzgj 线第二批）</p>
+<p><strong>不含</strong>（别的线负责）：引擎 Service 注册（codex 线）、安装器/长路径 manifest/PS 5.1 脚本骨架（原 tzgj 线第二批，已并入 main；该线 2026-09-20 废弃后归 codex 线）</p>
 <h2 id="7">7. 约束与验收</h2>
 <ul>
 <li>禁止 Win11 专有组件（<code>WindowsAppSDK</code>、Mica、SnapLayout 等）；目标 Win10 1809 起</li>
@@ -255,8 +256,8 @@ MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM �
 </tr>
 <tr>
 <td><code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code></td>
-<td><strong>tzgj 线</strong></td>
-<td>本 ADR 即其开工依据</td>
+<td><strong>codex 线</strong>（2026-09-20 起）</td>
+<td>原 owner tzgj 线已废弃；本 ADR 仍是开工依据</td>
 </tr>
 <tr>
 <td><code>docs/</code>、<code>adapter/</code>、<code>m05-toolkit/</code>、<code>scripts/</code>、根文档、<code>.github/</code></td>
@@ -265,7 +266,7 @@ MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM �
 </tr>
 </tbody>
 </table>
-<h2 id="14-tzgj-2026-09-15">14. 第二批复核结论 → 第三批要求（tzgj 线，2026-09-15 · <strong>已交付并复核通过</strong>）</h2>
+<h2 id="14-tzgj-2026-09-15">14. 第二批复核结论 → 第三批要求（原 tzgj 线，2026-09-15 · <strong>已交付并复核通过</strong>）</h2>
 <blockquote>
 <p>第三批交付：分支 <code>tzgj/tray3</code>（commit <code>36626bc</code>），已合入 main。主线复核：构建 0 警告 0 错误、format、
 四条静态检查、三个含中文脚本 BOM、隐私扫描、作者身份均通过；§14 七项逐条对上（虚拟账号 <code>sc config obj=</code> 无 password、
@@ -286,7 +287,11 @@ API key ACL、Runtime 检测、自启搬托盘 <code>AutoStart.cs</code>、长�
 <li><strong>安装源改 publish 产物</strong>：<code>setup.iss</code> 的 <code>[Files]</code> 取 <code>dotnet publish -c Release -r win-x64</code> 输出并同步进 <code>packaging\bin</code>，不再引用源码树的 <code>bin\Release\...</code> 路径。</li>
 <li>保持不动的：<code>AppId</code> 当前 GUID（改则升级识别断裂）、卸载<strong>绝不</strong>删用户同步目录、失败必须写 <code>install.log</code>。</li>
 </ol>
-<h2 id="15-tzgj-2026-09-15">15. 第三批复核发现 → 第四批要求（tzgj 线：真实安装测试，2026-09-15）</h2>
+<h2 id="15-tzgj-2026-09-15">15. 第三批复核发现 → 第四批要求（原 tzgj 线：真实安装测试，2026-09-15）</h2>
+<blockquote>
+<p><strong>该线的第四批未开工即废弃（2026-09-20）</strong>：下列要求<strong>全部有效</strong>，但收件人改派——第 1 项（Runtime 检测）归 <strong>codex 线</strong>；
+第 2/3/5 项（<code>iscc</code> 真编译、真机装卸、publish 一致性）归 <strong>主线</strong>；第 4 项（引擎二进制上交付台）已完成。</p>
+</blockquote>
 <p>主线复核（合入前）发现一处<strong>会在自己机器上立刻踩到</strong>的缺陷，加三项"必须实跑"的验证：</p>
 <ol>
 <li><strong>Runtime 检测有假阴性</strong>：<code>Test-DotnetDesktopRuntime</code> 只扫 <code>%ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App</code>。
@@ -326,9 +331,9 @@ API key ACL、Runtime 检测、自启搬托盘 <code>AutoStart.cs</code>、长�
 <tbody>
 <tr>
 <td>写 C# / <code>dotnet build</code> / <code>dotnet format</code> / 四条静态检查</td>
-<td>工作机（Win10 22H2）</td>
-<td>tzgj 线</td>
-<td><strong>零</strong>（实测通过）</td>
+<td>~~工作机（Win10 22H2）~~ → <strong>随线废弃不可用</strong></td>
+<td>~~tzgj 线~~ → <strong>codex 线</strong>（用其 Windows 环境）</td>
+<td>零</td>
 </tr>
 <tr>
 <td><code>iscc</code> 编译安装包</td>
@@ -393,6 +398,58 @@ API key ACL、Runtime 检测、自启搬托盘 <code>AutoStart.cs</code>、长�
 </table>
 <p><strong>当前编译状态（实测）</strong>：Inno 6.7.3 + SDK 10.0.401 交叉发布的托盘产物 → <code>Successful compile</code>，<strong>0 错误 0 警告</strong>，
 产物 <code>LanSync-Setup-0.1.0.exe</code>（15.7 MB）。</p>
+<h2 id="17-tzgj-2026-09-20">17. tzgj 线废弃与去耦（2026-09-20）</h2>
+<p><strong>背景</strong>：项目发起人确认第三条线（tzgj，Win10 工作机）<strong>废弃</strong>，不再派活。该线三批交付（托盘骨架 / packaging 骨架 / 第三批收口）
+<strong>已全部并入 main</strong>，代码无遗留；本文档记录的规格与要求<strong>全部继续有效</strong>，只是收件人变了。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>变更前</th>
+<th>变更后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/LanSync.Tray</code>、<code>packaging/</code>、<code>deploy/</code> owner</td>
+<td>tzgj 线</td>
+<td><strong>codex 线</strong></td>
+</tr>
+<tr>
+<td><code>iscc</code> 编译安装包</td>
+<td>WinServer-A 2025 · 主线</td>
+<td>不变（<strong>主线</strong>）</td>
+</tr>
+<tr>
+<td>安装 / 卸载真机测试</td>
+<td>WinServer-A 2025 · 主线</td>
+<td>不变（<strong>主线</strong>）；⚠️ Win10 机型缺口见下</td>
+</tr>
+<tr>
+<td>C# 构建与静态检查在哪跑</td>
+<td>tzgj 的 Win10 工作机</td>
+<td><strong>codex 线</strong>环境</td>
+</tr>
+<tr>
+<td>未开工的第四批（§15 第 1/2/3/5 项）</td>
+<td>tzgj 线</td>
+<td>1 项归 codex、3 项归主线</td>
+</tr>
+<tr>
+<td>托盘状态灯接 <code>SubscribeConnectionChangesAsync</code>（iter3 库侧已备）</td>
+<td>通知 tzgj</td>
+<td><strong>通知 codex</strong></td>
+</tr>
+<tr>
+<td>投递通道</td>
+<td>inbox/tzgj（bundle）</td>
+<td>归档保留；codex 走分支</td>
+</tr>
+</tbody>
+</table>
+<p><strong>连带缺口（必须记住）</strong>：原计划用于 Win10 真实安装/同步实测的<strong>唯一 Win10 机器随该线一起不可用</strong>。
+兼容性文档里的"实测口径（Win10 实测机可跑）"因此<strong>暂时没有验证手段</strong>——补位方式（VM / 借机 / 口径降级）
+属项目发起人决策项，已登记在看板。<strong>在补位前，任何"Win10 已实测"的表述都不许写</strong>。</p>
 <h2 id="13-adr">13. 本 ADR 依赖的硬事实来源（改结论前先核这些）</h2>
 <table>
 <thead>
