@@ -149,9 +149,17 @@ internal sealed class SyncthingPair : IAsyncDisposable
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (LongPath.Exists(path) && LongPath.ReadAllText(path) == expected)
+            try
             {
-                return;
+                if (LongPath.Exists(path) && LongPath.ReadAllText(path) == expected)
+                {
+                    return;
+                }
+            }
+            catch (IOException)
+            {
+                // Syncthing may briefly hold an exclusive handle while replacing a file.
+                // This method is a polling wait, so retry until the original deadline.
             }
 
             await Task.Delay(250);

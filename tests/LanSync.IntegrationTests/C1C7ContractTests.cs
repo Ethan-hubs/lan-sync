@@ -220,9 +220,57 @@ public sealed class C1C7ContractTests
             new Dictionary<DeviceId, SyncthingAdapter> { [pair.IdA] = pair.A });
 
         CollectionAssert.Contains(restore.PausedDevices.Select(device => device.Value).ToArray(), pair.IdA.Value);
+        Assert.IsTrue(restore.PeerPaused);
+        Assert.IsEmpty(restore.UnpausedDevices);
         await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(30));
         await pair.WaitForFileAsync(source, "v1", TimeSpan.FromSeconds(60));
         Assert.IsTrue((await pair.B.WaitForConnectionAsync(pair.IdA, TimeSpan.FromSeconds(60))).Connected);
+    }
+
+    [TestMethod]
+    public async Task C7b_version_restore_without_peer_channel_uses_degraded_path()
+    {
+        var pair = RequirePair();
+        var fileName = $"c7b-{Guid.NewGuid():N}.txt";
+        var source = Path.Combine(pair.FolderA, fileName);
+        var target = Path.Combine(pair.FolderB, fileName);
+
+        LongPath.WriteAllText(source, "v1");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(60));
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        LongPath.WriteAllText(source, "v2");
+        await pair.A.RescanAsync(pair.FolderId, fileName);
+        await pair.WaitForFileAsync(target, "v2", TimeSpan.FromSeconds(60));
+
+        IReadOnlyList<VersionEntry>? archived = null;
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(60);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var versions = await pair.B.GetVersionsAsync(pair.FolderId, fileName);
+            if (versions.TryGetValue(fileName, out archived) && archived.Count > 0)
+            {
+                break;
+            }
+
+            await Task.Delay(500);
+        }
+
+        Assert.IsNotNull(archived, "The receiving instance did not archive v1.");
+        Assert.IsNotEmpty(archived);
+        var restore = await pair.B.RestoreVersionAsync(
+            pair.FolderId,
+            fileName,
+            archived[0].VersionTime);
+
+        Assert.IsTrue(restore.Succeeded);
+        Assert.IsFalse(restore.PeerPaused);
+        CollectionAssert.AreEqual(
+            new[] { pair.IdA.Value },
+            restore.UnpausedDevices.Select(device => device.Value).ToArray());
+        Assert.IsEmpty(restore.PausedDevices);
+        Assert.IsEmpty(restore.ResumedDevices);
     }
 
     [TestMethod]

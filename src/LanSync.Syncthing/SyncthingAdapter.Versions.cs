@@ -56,14 +56,12 @@ public sealed partial class SyncthingAdapter
         string folderId,
         string relativePath,
         string versionTime,
-        IReadOnlyDictionary<DeviceId, SyncthingAdapter> peerAdapters,
+        IReadOnlyDictionary<DeviceId, SyncthingAdapter>? peerAdapters = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folderId);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(versionTime);
-        ArgumentNullException.ThrowIfNull(peerAdapters);
-
         var folder = await GetFolderAsync(folderId, cancellationToken).ConfigureAwait(false);
         var localDeviceId = await GetLocalDeviceIdAsync(cancellationToken).ConfigureAwait(false);
         var availableVersions = await GetVersionsAsync(folderId, relativePath, cancellationToken).ConfigureAwait(false);
@@ -79,6 +77,7 @@ public sealed partial class SyncthingAdapter
             .ConfigureAwait(false);
 
         var peersToPause = new List<(DeviceId Id, SyncthingAdapter Adapter)>();
+        var unpausedPeers = new List<DeviceId>();
         foreach (var device in (folder["devices"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
         {
             var deviceIdText = device["deviceID"]?.GetValue<string>();
@@ -89,13 +88,12 @@ public sealed partial class SyncthingAdapter
             }
 
             var peerId = new DeviceId(deviceIdText);
-            var peerAdapter = peerAdapters.FirstOrDefault(pair =>
+            var peerAdapter = peerAdapters?.FirstOrDefault(pair =>
                 string.Equals(pair.Key.Value, peerId.Value, StringComparison.OrdinalIgnoreCase)).Value;
             if (peerAdapter is null)
             {
-                throw new ArgumentException(
-                    $"No Adapter was supplied for peer {peerId}, which shares folder {folderId}.",
-                    nameof(peerAdapters));
+                unpausedPeers.Add(peerId);
+                continue;
             }
 
             var localDeviceOnPeer = await peerAdapter.GetDeviceAsync(localDeviceId, cancellationToken)
@@ -158,12 +156,15 @@ public sealed partial class SyncthingAdapter
                     versionTime,
                     TimeSpan.FromSeconds(15),
                     cancellationToken).ConfigureAwait(false);
-                await WaitUntilRestoredFileIndexedAsync(
-                    folderId,
-                    relativePath,
-                    selectedVersion.ModTime,
-                    TimeSpan.FromSeconds(15),
-                    cancellationToken).ConfigureAwait(false);
+                if (unpausedPeers.Count == 0)
+                {
+                    await WaitUntilRestoredFileIndexedAsync(
+                        folderId,
+                        relativePath,
+                        selectedVersion.ModTime,
+                        TimeSpan.FromSeconds(15),
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception exception)
             {
@@ -207,6 +208,8 @@ public sealed partial class SyncthingAdapter
             versionTime,
             pausedByTransaction.Select(peer => peer.Id).ToArray(),
             resumedByTransaction.ToArray(),
+            PeerPaused: unpausedPeers.Count == 0,
+            UnpausedDevices: unpausedPeers.ToArray(),
             Succeeded: true);
     }
 

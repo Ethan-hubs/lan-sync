@@ -58,6 +58,8 @@ public sealed class VersionsTests
         Assert.AreEqual("file.txt", result.RelativePath);
         Assert.AreEqual("20260914-010203", result.VersionTime);
         CollectionAssert.AreEqual(new[] { Peer2, Peer1 }, result.ResumedDevices.Select(device => device.Value).ToArray());
+        Assert.IsTrue(result.PeerPaused);
+        Assert.IsEmpty(result.UnpausedDevices);
         Assert.IsTrue(result.Succeeded);
         CollectionAssert.AreEqual(
             new[]
@@ -77,6 +79,44 @@ public sealed class VersionsTests
         AssertPeerTransaction(peer1Handler, pauseAndResume: true);
         AssertPeerTransaction(peer2Handler, pauseAndResume: true);
         AssertPeerTransaction(pausedHandler, pauseAndResume: false);
+    }
+
+    [TestMethod]
+    public async Task Restore_without_peer_adapters_uses_degraded_path_without_pause_requests()
+    {
+        var (adapter, handler) = TestAdapter.Create();
+        EnqueueScope(handler, includeSecondPeer: true);
+        EnqueueSelectedVersion(handler);
+        EnqueueIdleFolder(handler);
+        handler.EnqueueJson("{}");
+        handler.EnqueueJson("{}");
+
+        var result = await adapter.RestoreVersionAsync(
+            "folder",
+            "file.txt",
+            "20260914-010203");
+
+        Assert.IsFalse(result.PeerPaused);
+        CollectionAssert.AreEqual(
+            new[] { Peer1, Peer2, AlreadyPaused },
+            result.UnpausedDevices.Select(device => device.Value).ToArray());
+        Assert.IsEmpty(result.PausedDevices);
+        Assert.IsEmpty(result.ResumedDevices);
+        Assert.IsTrue(result.Succeeded);
+        Assert.IsFalse(handler.Requests.Any(request =>
+            request.PathAndQuery.StartsWith("/rest/system/pause", StringComparison.Ordinal) ||
+            request.PathAndQuery.StartsWith("/rest/system/resume", StringComparison.Ordinal)));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "/rest/config/folders/folder",
+                "/rest/system/status",
+                "/rest/folder/versions?folder=folder&file=file.txt",
+                "/rest/db/status?folder=folder",
+                "/rest/folder/versions?folder=folder",
+                "/rest/folder/versions?folder=folder&file=file.txt",
+            },
+            handler.Requests.Select(request => request.PathAndQuery).ToArray());
     }
 
     [TestMethod]
