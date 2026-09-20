@@ -12,7 +12,7 @@ public sealed class DevicesFoldersAndIgnoresTests
     [TestMethod]
     public async Task Add_folder_serializes_staggered_max_age_as_seconds_string()
     {
-        // 保哥 2026-09-20 决策“先按能跑的标准来”：阶段一取 1～2 秒，实现固定取 2 秒。
+        // 项目发起人 2026-09-20 决策“先按能跑的标准来”：阶段一取 1～2 秒，实现固定取 2 秒。
         Assert.AreEqual(2.0, FolderSpec.DefaultFsWatcherDelaySeconds);
         var (adapter, handler) = TestAdapter.Create();
         handler.EnqueueJson("{}");
