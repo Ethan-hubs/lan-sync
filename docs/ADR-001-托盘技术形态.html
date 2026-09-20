@@ -209,9 +209,35 @@ MSBuild 的 <code>GetTargetPlatformVersion</code> 对无版本的 windows TFM �
 <li>托盘<strong>只调用 <code>LanSync.Syncthing</code> 暴露的方法</strong>，<strong>禁止</strong>自己发 Syncthing REST 请求（否则错误处理与授权口径会双份）。</li>
 <li>迭代 1 已具备（且通过零改动复核）：<code>HealthAsync</code>、配置安全更新（GET→改→PUT）、设备/文件夹/忽略规则、<code>GetConnectionsAsync</code>
   （映射 <code>ConnectionKind.Direct/Relay/Offline/Unknown</code> + paused）、<code>SubscribeEventsAsync</code>、<code>Pause/ResumeAsync</code>、<code>GetFolderErrorsAsync</code>（<strong>只读</strong>）。</li>
-<li><strong>尚不可用</strong>（等 codex 线迭代 2 的 C7）：版本恢复事务。⇒ 托盘"恢复版本"面板<strong>先只读展示</strong>，"恢复"按钮禁用或留空实现。</li>
-<li>状态灯映射见 §3（四态 + 橙留位）。</li>
+<li><strong>C7 版本恢复事务已可用（2026-09-20 起）</strong>：<code>RestoreVersionAsync</code> 以<strong>降级语义</strong>支持无对端通道场景
+  （<code>peerAdapters</code> 可空；结果里 <code>PeerPaused=false</code> + <code>UnpausedDevices</code> 列出未暂停设备）。
+  ⇒ 托盘"恢复版本"面板<strong>解除只读</strong>，但必须按下面口径做 UI：</li>
 </ul>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>返回值</th>
+<th>UI 要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全部对端被成功暂停</td>
+<td><code>PeerPaused=true</code>、<code>UnpausedDevices</code> 空</td>
+<td>正常提示"已恢复到 &lt;版本时间&gt;"</td>
+</tr>
+<tr>
+<td>拿不到对端通道（阶段一常态）</td>
+<td><code>PeerPaused=false</code>、<code>UnpausedDevices</code> 非空</td>
+<td><strong>必须显式警示</strong>"对端未暂停，若其在线可能产生冲突副本"，并列出设备名</td>
+</tr>
+</tbody>
+</table>
+<p><strong>禁止</strong>把 <code>PeerPaused=false</code> 当成功静默处理——这是实测过的静默数据覆盖风险（<code>adapter/exp_restore.py</code>、C7 负例）。
+  真正的对端暂停能力见 <strong><code>docs/ADR-002-对端暂停控制通道.md</code></strong>（阶段二，复用引擎证书的 LAN 控制端点 + 租约自愈）。
+- <strong>尚不可用</strong>（其余）：无。控制通道属阶段二，不阻塞面板上线。
+- 状态灯映射见 §3（四态 + 橙留位）。</p>
 <h2 id="12-owner">12. 目录 owner 表（防撞车；跨边界先在看板登记）</h2>
 <table>
 <thead>

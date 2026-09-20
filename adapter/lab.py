@@ -124,6 +124,38 @@ def cmd_up(_: argparse.Namespace) -> None:
     print("\n完成。接着跑：python3 lab.py checks")
 
 
+    # 私有化后 discovery/relay 已关闭，对端地址必须是显式 tcp://（否则一直是 dynamic=永不连接）
+    ensure_peer_addresses()
+
+
+def ensure_peer_addresses() -> None:
+    """把 A/B 两实例的对端地址钉成显式 tcp://（幂等；2026-09-20 踩过：dynamic 永不连接）。"""
+    import json as _json
+    import urllib.request as _u
+    for me, peer, my_port, peer_port in (("A", "B", 22000, 22001), ("B", "A", 22001, 22000)):
+        k = api_key(me)
+        gui = f"http://127.0.0.1:{8384 if me == 'A' else 8385}"
+        def call(path, method="GET", body=None):
+            req = _u.Request(gui + path, method=method,
+                             headers={"X-API-Key": k, "Content-Type": "application/json"},
+                             data=_json.dumps(body).encode() if body is not None else None)
+            with _u.urlopen(req, timeout=10) as r:
+                raw = r.read().decode()
+            return _json.loads(raw) if raw.strip() else None
+        my_id = call("/rest/system/status")["myID"]
+        want = f"tcp://127.0.0.1:{peer_port}"
+        for d in call("/rest/config")["devices"]:
+            if d["deviceID"] == my_id:
+                continue
+            if d.get("addresses") == [want]:
+                print(f"  [{me}] 对端地址已就绪：{want}")
+                continue
+            d = dict(d); d["addresses"] = [want]
+            call(f"/rest/config/devices/{d['deviceID']}", "PUT", d)
+            print(f"  [{me}] 已设对端地址：{want}")
+
+
+
 def cmd_status(_: argparse.Namespace) -> None:
     for name in INSTANCES:
         try:
