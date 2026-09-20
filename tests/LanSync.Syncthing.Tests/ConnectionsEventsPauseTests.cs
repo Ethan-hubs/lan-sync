@@ -82,6 +82,41 @@ public sealed class ConnectionsEventsPauseTests
     }
 
     [TestMethod]
+    public async Task Connection_observer_emits_only_actual_kind_changes_in_order()
+    {
+        var (adapter, handler) = TestAdapter.Create();
+        EnqueueConnection(handler, connected: true, paused: false, type: "tcp-client");
+        EnqueueConnection(handler, connected: true, paused: false, type: "tcp-server");
+        EnqueueConnection(handler, connected: true, paused: false, type: "relay-client");
+        EnqueueConnection(handler, connected: true, paused: false, type: "relay-server");
+        EnqueueConnection(handler, connected: false, paused: false, type: null);
+        EnqueueConnection(handler, connected: false, paused: false, type: null);
+        EnqueueConnection(handler, connected: false, paused: true, type: null);
+        var startedAt = DateTimeOffset.UtcNow;
+
+        await using var observer = adapter.SubscribeConnectionChangesAsync(TimeSpan.FromMilliseconds(1))
+            .GetAsyncEnumerator();
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var relayed = observer.Current;
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var offline = observer.Current;
+        Assert.IsTrue(await observer.MoveNextAsync());
+        var paused = observer.Current;
+
+        Assert.AreEqual(Id, relayed.DeviceId.Value);
+        Assert.AreEqual(ConnectionKind.Direct, relayed.OldKind);
+        Assert.AreEqual(ConnectionKind.Relay, relayed.NewKind);
+        Assert.IsGreaterThanOrEqualTo(startedAt, relayed.Timestamp);
+        Assert.AreEqual(ConnectionKind.Relay, offline.OldKind);
+        Assert.AreEqual(ConnectionKind.Offline, offline.NewKind);
+        Assert.IsGreaterThanOrEqualTo(relayed.Timestamp, offline.Timestamp);
+        Assert.AreEqual(ConnectionKind.Offline, paused.OldKind);
+        Assert.AreEqual(ConnectionKind.Paused, paused.NewKind);
+        Assert.IsGreaterThanOrEqualTo(offline.Timestamp, paused.Timestamp);
+        Assert.HasCount(7, handler.Requests);
+    }
+
+    [TestMethod]
     public async Task Pause_and_resume_support_global_and_device_scope()
     {
         var (adapter, handler) = TestAdapter.Create();
@@ -105,5 +140,25 @@ public sealed class ConnectionsEventsPauseTests
                 $"/rest/system/resume?device={Id}",
             },
             handler.Requests.Select(request => request.PathAndQuery).ToArray());
+    }
+
+    private static void EnqueueConnection(
+        RecordingHandler handler,
+        bool connected,
+        bool paused,
+        string? type)
+    {
+        handler.EnqueueJson(new JsonObject
+        {
+            ["connections"] = new JsonObject
+            {
+                [Id] = new JsonObject
+                {
+                    ["connected"] = connected,
+                    ["paused"] = paused,
+                    ["type"] = type,
+                },
+            },
+        }.ToJsonString());
     }
 }

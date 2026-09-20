@@ -18,9 +18,26 @@ public sealed class DevicesFoldersAndIgnoresTests
         await adapter.AddFolderAsync(new FolderSpec("folder-1", "Folder", @"C:\\sync", [new DeviceId(Id)]));
 
         var body = JsonNode.Parse(handler.Requests.Single().Body!)!.AsObject();
+        Assert.AreEqual(FolderSpec.DefaultFsWatcherDelaySeconds, body["fsWatcherDelayS"]!.GetValue<double>());
         Assert.AreEqual("staggered", body["versioning"]!["type"]!.GetValue<string>());
         var maxAge = body["versioning"]!["params"]!["maxAge"]!;
         Assert.AreEqual("2592000", maxAge.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task Add_folder_allows_fs_watcher_delay_override()
+    {
+        var (adapter, handler) = TestAdapter.Create();
+        handler.EnqueueJson("{}");
+        var spec = new FolderSpec("folder-1", "Folder", @"C:\sync", [new DeviceId(Id)])
+        {
+            FsWatcherDelaySeconds = 1.5,
+        };
+
+        await adapter.AddFolderAsync(spec);
+
+        var body = JsonNode.Parse(handler.Requests.Single().Body!)!.AsObject();
+        Assert.AreEqual(1.5, body["fsWatcherDelayS"]!.GetValue<double>());
     }
 
     [TestMethod]

@@ -58,8 +58,11 @@ public sealed class VersionsTests
         Assert.AreEqual("file.txt", result.RelativePath);
         Assert.AreEqual("20260914-010203", result.VersionTime);
         CollectionAssert.AreEqual(new[] { Peer2, Peer1 }, result.ResumedDevices.Select(device => device.Value).ToArray());
-        Assert.IsTrue(result.PeerPaused);
-        Assert.IsEmpty(result.UnpausedDevices);
+        Assert.IsFalse(result.PeerPaused);
+        CollectionAssert.AreEqual(
+            new[] { AlreadyPaused },
+            result.UnpausedDevices.Select(device => device.Value).ToArray());
+        Assert.IsTrue(result.DurabilityVerified);
         Assert.IsTrue(result.Succeeded);
         CollectionAssert.AreEqual(
             new[]
@@ -102,6 +105,7 @@ public sealed class VersionsTests
             result.UnpausedDevices.Select(device => device.Value).ToArray());
         Assert.IsEmpty(result.PausedDevices);
         Assert.IsEmpty(result.ResumedDevices);
+        Assert.IsFalse(result.DurabilityVerified);
         Assert.IsTrue(result.Succeeded);
         Assert.IsFalse(handler.Requests.Any(request =>
             request.PathAndQuery.StartsWith("/rest/system/pause", StringComparison.Ordinal) ||

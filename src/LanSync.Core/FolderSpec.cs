@@ -7,10 +7,11 @@ public sealed record FolderSpec(
     IReadOnlyList<DeviceId> DeviceIds)
 {
     public const int ThirtyDaysInSeconds = 30 * 24 * 60 * 60;
+    public const double DefaultFsWatcherDelaySeconds = 2;
 
     public string FolderType { get; init; } = "sendreceive";
 
-    public double FsWatcherDelaySeconds { get; init; } = 10;
+    public double FsWatcherDelaySeconds { get; init; } = DefaultFsWatcherDelaySeconds;
 
     public int VersioningMaxAgeSeconds { get; init; } = ThirtyDaysInSeconds;
 }

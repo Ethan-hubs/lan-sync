@@ -8,4 +8,5 @@ public sealed record VersionRestoreResult(
     IReadOnlyList<DeviceId> ResumedDevices,
     bool PeerPaused,
     IReadOnlyList<DeviceId> UnpausedDevices,
+    bool DurabilityVerified,
     bool Succeeded);

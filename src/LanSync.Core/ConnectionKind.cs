@@ -6,5 +6,6 @@ public enum ConnectionKind
     Direct,
     Relay,
     Offline,
+    Paused,
 }
 

@@ -56,8 +56,11 @@ public sealed class C1C7ContractTests
 
         Assert.IsNotNull(config["devices"]);
         Assert.IsNotNull(config["folders"]);
-        Assert.IsTrue((await pair.A.GetFoldersAsync()).OfType<System.Text.Json.Nodes.JsonObject>()
-            .Any(folder => folder["id"]?.GetValue<string>() == pair.FolderId));
+        var folder = (await pair.A.GetFoldersAsync()).OfType<System.Text.Json.Nodes.JsonObject>()
+            .Single(folder => folder["id"]?.GetValue<string>() == pair.FolderId);
+        Assert.AreEqual(
+            FolderSpec.DefaultFsWatcherDelaySeconds,
+            folder["fsWatcherDelayS"]!.GetValue<double>());
     }
 
     [TestMethod]
@@ -222,6 +225,7 @@ public sealed class C1C7ContractTests
         CollectionAssert.Contains(restore.PausedDevices.Select(device => device.Value).ToArray(), pair.IdA.Value);
         Assert.IsTrue(restore.PeerPaused);
         Assert.IsEmpty(restore.UnpausedDevices);
+        Assert.IsTrue(restore.DurabilityVerified);
         await pair.WaitForFileAsync(target, "v1", TimeSpan.FromSeconds(30));
         await pair.WaitForFileAsync(source, "v1", TimeSpan.FromSeconds(60));
         Assert.IsTrue((await pair.B.WaitForConnectionAsync(pair.IdA, TimeSpan.FromSeconds(60))).Connected);
@@ -271,6 +275,7 @@ public sealed class C1C7ContractTests
             restore.UnpausedDevices.Select(device => device.Value).ToArray());
         Assert.IsEmpty(restore.PausedDevices);
         Assert.IsEmpty(restore.ResumedDevices);
+        Assert.IsFalse(restore.DurabilityVerified);
     }
 
     [TestMethod]
@@ -307,6 +312,46 @@ public sealed class C1C7ContractTests
         await pair.WaitForFileAsync(source, "v2-remote", TimeSpan.FromSeconds(15));
     }
 
+    [TestMethod]
+    public async Task C8_connection_changes_arrive_in_pause_resume_order()
+    {
+        var pair = RequirePair();
+        var initial = await pair.A.WaitForConnectionAsync(pair.IdB, TimeSpan.FromSeconds(60));
+        Assert.IsTrue(initial.Kind is ConnectionKind.Direct or ConnectionKind.Relay);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        await using var observer = pair.A.SubscribeConnectionChangesAsync(
+            TimeSpan.FromMilliseconds(100),
+            cancellation.Token).GetAsyncEnumerator(cancellation.Token);
+
+        var pausedTask = WaitForConnectionChangeAsync(
+            observer,
+            change => change.DeviceId == pair.IdB && change.NewKind == ConnectionKind.Paused,
+            TimeSpan.FromSeconds(30));
+        await Task.Delay(500, cancellation.Token);
+        try
+        {
+            await pair.A.PauseAsync(pair.IdB, cancellation.Token);
+            var paused = await pausedTask;
+
+            var resumedTask = WaitForConnectionChangeAsync(
+                observer,
+                change => change.DeviceId == pair.IdB &&
+                    change.NewKind is ConnectionKind.Direct or ConnectionKind.Relay,
+                TimeSpan.FromSeconds(60));
+            await pair.A.ResumeAsync(pair.IdB, cancellation.Token);
+            var resumed = await resumedTask;
+
+            Assert.IsTrue(paused.OldKind is ConnectionKind.Direct or ConnectionKind.Relay);
+            Assert.AreEqual(ConnectionKind.Paused, paused.NewKind);
+            Assert.IsTrue(resumed.NewKind is ConnectionKind.Direct or ConnectionKind.Relay);
+            Assert.IsGreaterThanOrEqualTo(paused.Timestamp, resumed.Timestamp);
+        }
+        finally
+        {
+            await pair.A.ResumeAsync(pair.IdB, CancellationToken.None);
+        }
+    }
+
     private static SyncthingPair RequirePair()
     {
         if (_pair is null)
@@ -331,5 +376,28 @@ public sealed class C1C7ContractTests
         }
 
         Assert.Fail($"Condition was not met within {timeout}.");
+    }
+
+    private static async Task<ConnectionKindChangedEvent> WaitForConnectionChangeAsync(
+        IAsyncEnumerator<ConnectionKindChangedEvent> observer,
+        Func<ConnectionKindChangedEvent, bool> predicate,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (!await observer.MoveNextAsync().AsTask().WaitAsync(remaining))
+            {
+                break;
+            }
+
+            if (predicate(observer.Current))
+            {
+                return observer.Current;
+            }
+        }
+
+        throw new TimeoutException($"Expected connection change was not observed within {timeout}.");
     }
 }

@@ -78,6 +78,7 @@ public sealed partial class SyncthingAdapter
 
         var peersToPause = new List<(DeviceId Id, SyncthingAdapter Adapter)>();
         var unpausedPeers = new List<DeviceId>();
+        var peersWithoutAdapters = new List<DeviceId>();
         foreach (var device in (folder["devices"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
         {
             var deviceIdText = device["deviceID"]?.GetValue<string>();
@@ -93,6 +94,7 @@ public sealed partial class SyncthingAdapter
             if (peerAdapter is null)
             {
                 unpausedPeers.Add(peerId);
+                peersWithoutAdapters.Add(peerId);
                 continue;
             }
 
@@ -103,6 +105,10 @@ public sealed partial class SyncthingAdapter
                     !string.Equals(peer.Id.Value, peerId.Value, StringComparison.OrdinalIgnoreCase)))
             {
                 peersToPause.Add((peerId, peerAdapter));
+            }
+            else if (isPaused)
+            {
+                unpausedPeers.Add(peerId);
             }
         }
 
@@ -156,7 +162,7 @@ public sealed partial class SyncthingAdapter
                     versionTime,
                     TimeSpan.FromSeconds(15),
                     cancellationToken).ConfigureAwait(false);
-                if (unpausedPeers.Count == 0)
+                if (peersWithoutAdapters.Count == 0)
                 {
                     await WaitUntilRestoredFileIndexedAsync(
                         folderId,
@@ -210,6 +216,7 @@ public sealed partial class SyncthingAdapter
             resumedByTransaction.ToArray(),
             PeerPaused: unpausedPeers.Count == 0,
             UnpausedDevices: unpausedPeers.ToArray(),
+            DurabilityVerified: peersWithoutAdapters.Count == 0,
             Succeeded: true);
     }
 

@@ -2,6 +2,8 @@
 
 本目录的 `LanSync.Core` 与 `LanSync.Syncthing` 使用 .NET SDK **10.0.401**，目标框架为跨平台 `net10.0`。仓库根目录的 `global.json` 固定 SDK 版本；请先确认 `dotnet --list-sdks` 含 `10.0.401`。
 
+阶段一 Windows 平台口径为：Windows 11 全版本、Windows 10（实测机可运行）、Windows Server 2016 及以上。本口径是当前实测支持范围，不把 Windows 10 1809 LTSC 写成硬门槛。
+
 集成测试支持两种真实 Syncthing v2.1.5 实例来源：
 
 - 外部实例：同时设置 `LANSW_TEST_A_GUI`、`LANSW_TEST_A_APIKEY`、`LANSW_TEST_B_GUI`、`LANSW_TEST_B_APIKEY`。
@@ -16,13 +18,24 @@ $DotNet10 = 'D:\Tools\dotnet10\dotnet.exe'
 & $DotNet10 format LanSync.sln --verify-no-changes --no-restore
 ```
 
-预期结果：单元测试为 **N/N**（当前 **29/29**，含无对端通道的恢复降级测试）；外部实例和自建实例模式为 **12/12**；显式清空全部 `LANSW_*` 后为 **2 passed / 10 skipped**。
+预期结果：单元测试为 **N/N**（当前 **31/31**）；外部实例和自建实例模式为 **13/13**；显式清空全部 `LANSW_*` 后为 **2 passed / 11 skipped**。
+
+## 阶段一 Folder 默认值
+
+`FolderSpec.DefaultFsWatcherDelaySeconds` 为 **2 秒**，`AddFolderAsync` 会把它作为 `fsWatcherDelayS` 经 REST 写入 Folder 配置。调用方可通过 `FolderSpec.FsWatcherDelaySeconds` 覆盖，阶段一建议保持在 1～2 秒。
+
+## 连接状态可观测事件
+
+`SubscribeConnectionChangesAsync` 返回异步事件流。只有设备的可观察连接类型确实发生变化时才产生 `ConnectionKindChangedEvent`，事件包含 `DeviceId`、旧/新 `ConnectionKind` 和 UTC 时间戳。阶段一状态灯映射为：`Direct`=绿、`Relay`=黄、`Offline`=红、`Paused`=灰；橙色只保留给阶段二授权异常，不由 Adapter 产生。
 
 ## 对端暂停能力矩阵
 
 | 调用条件 | 恢复行为 | 返回结果 | 产品风险 |
 | --- | --- | --- | --- |
-| 提供目标 Folder 全部共享对端的 Adapter | 仅暂停原本未暂停的对端；恢复结束后仅恢复本事务成功暂停的设备 | `PeerPaused=true`，`UnpausedDevices` 为空 | 提供强保证，避免在线对端用较新版本覆盖恢复结果 |
-| 未提供 Adapter，或只提供部分对端 Adapter | 缺少通道的对端跳过暂停且不抛异常；已有通道仍按事务暂停/恢复 | `PeerPaused=false`，`UnpausedDevices` 列出未暂停设备 | 恢复可以完成，但在线对端可能覆盖结果或产生冲突副本；UI 必须明确提示 |
+| 所有共享对端都有 Adapter，且原本均未暂停 | 本事务暂停全部对端，恢复后仅恢复本事务暂停的设备 | `Succeeded=true`、`PeerPaused=true`、`DurabilityVerified=true`，`UnpausedDevices` 为空 | 提供强保证，避免在线对端覆盖恢复结果 |
+| 所有共享对端都有 Adapter，但部分原本已暂停 | 原暂停设备保持不动，其余由本事务暂停/恢复 | `Succeeded=true`、`PeerPaused=false`、`DurabilityVerified=true`；原暂停设备列入 `UnpausedDevices` | 仍有暂停保障，恢复结果经过本地索引校验 |
+| 未提供 Adapter，或只提供部分对端 Adapter | 缺少通道的对端跳过暂停且不抛异常；已有通道仍按事务暂停/恢复 | `Succeeded=true`、`PeerPaused=false`、`DurabilityVerified=false`；缺少通道及原暂停设备列入 `UnpausedDevices` | 本地恢复请求完成，但在线对端可能覆盖结果或产生冲突副本；UI 必须明确提示 |
+
+字段口径固定如下：`Succeeded` 只表示本地恢复请求成功且所选归档版本已被消费，不代表结果经得起在线对端覆盖；`DurabilityVerified` 表示所有共享对端均有暂停保障且恢复版本通过本地索引校验；`PeerPaused=true` 仅表示所有共享对端都由本事务成功暂停；`UnpausedDevices` 表示本事务未施加暂停的设备，包括无控制通道和原本已暂停的设备。
 
 `RestoreVersionAsync` 的 `peerAdapters` 参数可省略。降级只针对“没有控制通道”的设备；如果已经拿到 Adapter 但暂停请求失败，恢复仍会失败并在 `finally` 中恢复本事务已经暂停的设备。
