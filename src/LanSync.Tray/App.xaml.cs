@@ -14,7 +14,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        AutoStart.EnsureInitialized();
+        AutoStart.RepairStaleEntry();
 
         _mainWindow = new MainWindow();
         _notifyIcon = CreateNotifyIcon();
