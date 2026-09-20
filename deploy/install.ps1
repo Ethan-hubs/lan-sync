@@ -3,7 +3,7 @@
 # 依据：ADR-001 §5（密钥位置）、§9（服务化）、§10（安装步骤）、§14（第三批要求）
 # 服务名 LanSyncEngine / 虚拟服务账号 NT SERVICE\LanSyncEngine（无口令、无需登录权限）/ shawl 包装
 # 由 Inno Setup 安装器在提权上下文调用；产物与失败信息写 %ProgramData%\LanSync\logs\install.log
-# 注：开机自启不在本脚本写 HKCU\Run（提权上下文会落到管理员配置单元），由托盘首启自写（§14(4)）。
+# 注：开机自启不在本脚本写 HKCU\Run（提权上下文会落到管理员配置单元），仅由用户在托盘菜单显式启用。
 
 [CmdletBinding()]
 param(
@@ -49,18 +49,50 @@ function Resolve-SyncDir {
     return $Candidate.Trim()
 }
 
-# §14(3)：.NET Desktop Runtime 精确检测（扫 %ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App\10.*）。
+# §14(3)：优先查询 PATH 中的 dotnet；再扫描系统级与用户级常见安装位置。
 function Test-DotnetDesktopRuntime {
-    $root = Join-Path $env:ProgramFiles 'dotnet\shared\Microsoft.WindowsDesktop.App'
-    $found = @()
-    if (Test-Path $root) {
-        $found = @(Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like '10.*' })
+    $dotnetCommand = Get-Command 'dotnet.exe' -ErrorAction SilentlyContinue
+    if ($null -eq $dotnetCommand) {
+        $dotnetCommand = Get-Command 'dotnet' -ErrorAction SilentlyContinue
     }
+
+    if ($null -ne $dotnetCommand) {
+        $runtimeLines = @(& $dotnetCommand.Source --list-runtimes 2>$null)
+        $desktopRuntimes = @($runtimeLines | Where-Object {
+            $_ -match '^Microsoft\.WindowsDesktop\.App\s+10\.'
+        })
+        if ($desktopRuntimes.Count -gt 0) {
+            Write-Step ("通过 dotnet --list-runtimes 检测到 .NET Desktop Runtime：{0}" -f ($desktopRuntimes -join '; '))
+            return
+        }
+    }
+
+    $dotnetRoots = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $dotnetRoots += (Join-Path $env:ProgramFiles 'dotnet')
+    }
+    if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+        $dotnetRoots += (Join-Path ${env:ProgramFiles(x86)} 'dotnet')
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $dotnetRoots += (Join-Path $env:USERPROFILE '.dotnet')
+    }
+
+    $found = @()
+    foreach ($dotnetRoot in @($dotnetRoots | Select-Object -Unique)) {
+        $desktopRoot = Join-Path $dotnetRoot 'shared\Microsoft.WindowsDesktop.App'
+        if (Test-Path -LiteralPath $desktopRoot) {
+            $found += @(Get-ChildItem -LiteralPath $desktopRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like '10.*' } |
+                ForEach-Object { '{0} ({1})' -f $_.Name, $_.FullName })
+        }
+    }
+
     if ($found.Count -gt 0) {
-        Write-Step ("检测到 .NET Desktop Runtime：{0}" -f ($found.Name -join ', '))
+        Write-Step ("通过安装目录检测到 .NET Desktop Runtime：{0}" -f ($found -join '; '))
         return
     }
+
     # 缺失：给出离线包路径并要求确认（阻断，不静默继续）。
     throw '未检测到 .NET Desktop Runtime 10.x。请先安装对应离线包（离线包路径待发布流水线提供，TODO）。'
 }
