@@ -1,0 +1,154 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点）</title>
+<style>
+ :root{{--fg:#1f2328;--muted:#59636e;--line:#d9dee3;--code:#f6f8fa;--accent:#0b62d6;}}
+ body{{margin:0;background:#f2f4f7;color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}}
+ .wrap{{max-width:1100px;margin:0 auto;padding:0 20px 80px;}}
+ header.top{{background:#0f172a;color:#fff;padding:28px 0 22px;margin-bottom:26px;}}
+ header.top h1{{margin:0 0 6px;font-size:22px;}} header.top .meta{{color:#9fb3c8;font-size:13px;}}
+ header.top .badge{{display:inline-block;background:#166534;color:#fff;font-size:12px;padding:2px 9px;border-radius:11px;margin-left:8px;vertical-align:2px;}}
+ main{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px 38px 46px;}}
+ h1,h2,h3,h4{{line-height:1.35;margin:1.7em 0 .6em;}} h1{{font-size:25px;border-bottom:2px solid var(--line);padding-bottom:.3em;}}
+ h2{{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:.25em;}} h3{{font-size:16.5px;}}
+ code{{background:var(--code);padding:.15em .4em;border-radius:4px;font:13px/1.5 ui-monospace,Consolas,monospace;}}
+ pre{{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;}}
+ pre code{{background:none;padding:0;font-size:12.5px;}}
+ table{{border-collapse:collapse;width:100%;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto;}}
+ th,td{{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top;}}
+ th{{background:#f0f3f7;font-weight:600;white-space:nowrap;}} tr:nth-child(even) td{{background:#fafbfc;}}
+ blockquote{{margin:1em 0;padding:.4em 1em;border-left:4px solid #c7d2de;color:var(--muted);background:#fafbfc;}}
+ hr{{border:0;border-top:1px solid var(--line);margin:2.4em 0;}}
+ footer{{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 0 0;}}
+</style></head><body>
+<header class="top"><div class="wrap"><h1>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点）<span class="badge">阶段二候选 · 待排期</span></h1><div class="meta">2026-09-20 · 问题（静默覆盖）/ 迭代 2.1 降级语义 / 复用引擎证书的 mTLS 控制端点 / 租约自愈 / 验收清单</div></div></header>
+<div class="wrap"><main><h1 id="adr-002-lan">ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点）</h1>
+<ul>
+<li>状态：<strong>已定稿待排期</strong>（2026-09-20，主线）</li>
+<li>决策者：主线（hermes 本机线）</li>
+<li>适用：<code>src/LanSync.Core</code>、<code>src/LanSync.Syncthing</code>、<code>src/LanSync.Tray</code>、<code>deploy/</code></li>
+<li>前置事实：ADR-001 §11（托盘↔Adapter 接口边界）、PRD §6.8（冲突与恢复）、
+  <code>docs/G1-Adapter接口约定.md</code> §6（恢复三步事务）、<code>adapter/exp_restore.py</code>（对照实验）</li>
+</ul>
+<hr />
+<h2 id="1-adr">1. 问题（为什么需要这份 ADR）</h2>
+<p>恢复历史版本<strong>必须</strong>先把会覆盖它的对端暂停，否则对端会在 1–2 秒内把旧内容推回来，
+而 API 仍然返回成功——这是实测出来的静默数据覆盖（<code>adapter/exp_restore.py</code> 对照实验，
+并已固化成契约测试 <code>C7_negative_restore_without_pausing_peer_is_overwritten</code>）。</p>
+<p>C7 的实现要求：<code>pause(对端) → POST /rest/folder/versions → 校验响应字典为空 → resume(对端)</code>，
+其中"暂停对端"要通过<strong>对端引擎自己的 REST</strong> 完成（<code>/rest/device/&lt;id&gt;/pause</code>）。</p>
+<p><strong>但阶段一没有任何到达对端引擎的通道</strong>：引擎只监听 <code>127.0.0.1:8384</code>（ADR-001 §5），
+我们也没有自研信令/控制通道。⇒ 托盘点"恢复版本"时拿不到对端 Adapter。</p>
+<h2 id="2-2114a8b76">2. 已落地的处理（迭代 2.1，<code>14a8b76</code>）：降级恢复</h2>
+<p><code>RestoreVersionAsync(..., IReadOnlyDictionary&lt;DeviceId, SyncthingAdapter&gt;? peerAdapters = null, ...)</code></p>
+<ul>
+<li><code>peerAdapters</code> 可空；缺失某台对端的适配器时<strong>不再抛异常</strong>，改为记入
+  <code>VersionRestoreResult.UnpausedDevices</code> 并继续；</li>
+<li>返回值新增 <code>PeerPaused: bool</code>（= 所有共享该文件夹的对端都被成功暂停）与 <code>UnpausedDevices</code>；</li>
+<li>有通道时仍是<strong>强保证</strong>（C7 正例/负例语义不变，且新增断言 <code>PeerPaused=true</code>、<code>UnpausedDevices</code> 为空）；</li>
+<li>无通道时<strong>跳过"等恢复文件被重新索引"</strong>（对端未暂停时该等待没有意义），
+  由 UI 明示风险："对端在线时可能产生冲突副本"。</li>
+</ul>
+<p>这样托盘可以解锁恢复面板，<strong>代价是暴露风险而不是隐藏风险</strong>——这是产品上的取舍，写进 UI 文案。</p>
+<h2 id="3">3. 决策</h2>
+<ol>
+<li><strong>阶段一交付降级语义</strong>（已实现，本轮并入 main）：恢复面板可用，语义务必如实上报。</li>
+<li><strong>控制通道另立本合同</strong>：作为<strong>阶段二</strong>能力，排期在 M1 之后；阶段一<strong>不写第四样自研件</strong>
+   （PRD §2.7 的"只自研三样"原则仍成立）。</li>
+<li>控制通道<strong>只服务"暂停/恢复对端"这一件事</strong>，不做通用远程控制面。</li>
+</ol>
+<h2 id="4">4. 控制通道设计（阶段二实现依据）</h2>
+<h3 id="41-pki">4.1 传输与身份：复用引擎既有密钥，不新建 PKI</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>决定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>端点</td>
+<td>每台设备在<strong>局域网接口</strong>上监听 <code>https://0.0.0.0:22001</code>（仅 LAN 可达；不放公网）</td>
+</tr>
+<tr>
+<td>证书</td>
+<td><strong>复用引擎已有的 <code>cert.pem</code> / <code>key.pem</code></strong>（ADR-001 §10：卸载保留该两件即保持 Device ID）。身份 = Syncthing Device ID，无需新发证书</td>
+</tr>
+<tr>
+<td>双向认证</td>
+<td>mTLS + 校验对端证书指纹 == 已知 Device ID。对端必须在<strong>本机 Syncthing 配置里已存在</strong>（即已互加设备）才接受</td>
+</tr>
+<tr>
+<td>禁止</td>
+<td>不复用 <code>strelaysrv</code> 通道（中继只转发同步协议流量，不承载任意 TCP）；不新增公网端口</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42">4.2 协议（只两个维护动作 + 一个探活）</h3>
+<pre><code>POST /v1/pause     body: {&quot;device&quot;: &quot;&lt;发起方 Device ID&gt;&quot;, &quot;folder&quot;: &quot;&lt;folderId&gt;&quot;, &quot;reason&quot;: &quot;&lt;文本≤200&gt;&quot;}
+POST /v1/resume    body: {&quot;device&quot;: &quot;&lt;发起方 Device ID&gt;&quot;, &quot;folder&quot;: &quot;&lt;folderId&gt;&quot;}
+GET  /v1/health    → {&quot;ok&quot;: true, &quot;device&quot;: &quot;&lt;本机 Device ID&gt;&quot;, &quot;pausedFor&quot;: [&quot;&lt;device&gt;&quot;, ...]}
+</code></pre>
+<ul>
+<li><strong>授权</strong>：仅当 ① 对端证书指纹在设备列表里；② <code>device</code> 字段 == 请求方自身 Device ID（不得代人暂停别人）；
+  ③ <code>folder</code> 与本机某文件夹 ID 匹配且该请求方共享该文件夹；④ 动作只能是 pause/resume。任一不满足 → 403。</li>
+<li><strong>幂等</strong>：重复 pause 同一 <code>device</code> 返回 200（已暂停）；<code>resume</code> 对未暂停对象同样 200。</li>
+<li><strong>租约与自愈</strong>：pause 带 <code>leaseSeconds</code>（默认 120，上限 600）。到期或进程重启后<strong>自动恢复</strong>——
+  防止发起方崩溃把对端永久留在暂停态（这是本设计里最关键的安全阀）。</li>
+<li><strong>限流与审计</strong>：每设备 ≤ 6 次/分钟；所有动作写 <code>%ProgramData%\LanSync\logs\control.log</code>。</li>
+</ul>
+<h3 id="43">4.3 发现与可达性</h3>
+<ul>
+<li>地址来源：复用 Syncthing 自己的连接信息（<code>/rest/system/connections</code> 里的对端地址），
+  不新发明发现协议、不新增 mDNS 服务；</li>
+<li><strong>只做 LAN</strong>：经中继/纯公网的对端拿不到控制通道 → 自动回落到 §2 的降级语义；</li>
+<li>控制通道不可达<strong>不得</strong>阻断恢复流程（超时 ≤ 2 s 即放弃并记入 <code>UnpausedDevices</code>）。</li>
+</ul>
+<h3 id="44-adapter">4.4 与 Adapter 的接口</h3>
+<ul>
+<li>新增 <code>ILanControlChannel</code>（<code>src/LanSync.Syncthing</code>，默认实现 <code>NoopControlChannel</code>）；</li>
+<li><code>RestoreVersionAsync</code> 的 <code>peerAdapters</code> 参数<strong>保持不变</strong>（不破坏已有签名与测试）：
+  由上层用"控制通道 → 对端 Adapter"的适配器装配出字典再传入，
+  这样降级路径与强路径<strong>共用同一套事务代码</strong>，不会出现两套语义。</li>
+</ul>
+<h2 id="5">5. 为什么不选另两条路（留痕）</h2>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>结论</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① LAN 控制通道（本合同）</td>
+<td>阶段二做</td>
+<td>体验最好、能力真实，但属第四样自研，会破坏阶段一的"三样"边界</td>
+</tr>
+<tr>
+<td>② 半自动：提示用户去对端点暂停</td>
+<td>不采</td>
+<td>零新组件但 3–5 人团队里必然被忽略，风险回到"静默覆盖"</td>
+</tr>
+<tr>
+<td>③ 可选参数降级（已实现）</td>
+<td>阶段一采用</td>
+<td>库侧改动小、解锁面板、风险显式暴露；与①兼容（同一签名）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6">6. 验收（阶段二开工时按此验收）</h2>
+<ol>
+<li>两台真机（或同机双实例）+ 仅 LAN：pause→restore→resume 全流程后 <code>PeerPaused=true</code>；</li>
+<li><strong>租约自愈</strong>：pause 后杀掉发起方进程，对端 ≤ 租约时间自动恢复，且 <code>control.log</code> 有记录；</li>
+<li><strong>越权</strong>：伪造/未互加的 Device ID 请求 → 403，且本机文件夹状态不变（负例必须实跑）；</li>
+<li><strong>不可达</strong>：拔网线/关对端 → 恢复仍成功，结果里 <code>UnpausedDevices</code> 非空，UI 出现风险提示；</li>
+<li>端口 <code>22001</code> <strong>不放公网</strong>（云安全组不开）；本机防火墙限制为局域网网段。</li>
+</ol>
+<h2 id="7">7. 待项目发起人拍板</h2>
+<ol>
+<li>是否现在就把控制通道排进 M1 之后的第一批（还是等真实使用中出现"冲突副本"再上）；</li>
+<li>端口号 <code>22001</code> 是否可用（与 <code>22000</code> 同步端口相邻，便于沟通）；</li>
+<li>租约默认值 120 s：恢复操作通常 &lt;10 s，120 s 是安全冗余——是否接受。</li>
+</ol></main><footer>ADR-002 · 恢复事务的「对端暂停」控制通道（LAN 控制端点） · 生成于 2026-09-13</footer></div></body></html>
